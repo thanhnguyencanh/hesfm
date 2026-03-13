@@ -1,0 +1,56 @@
+# =============================================================================
+# ResetMap.srv
+# =============================================================================
+# Reset the semantic map (full or partial)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Request
+# -----------------------------------------------------------------------------
+
+# Reset mode:
+# 0 = full reset (clear everything)
+# 1 = partial reset (clear region only)
+# 2 = soft reset (keep structure, reset observations)
+uint8 reset_mode
+
+uint8 RESET_FULL = 0
+uint8 RESET_PARTIAL = 1
+uint8 RESET_SOFT = 2
+
+# Region to reset (only for partial reset)
+geometry_msgs/Point region_min
+geometry_msgs/Point region_max
+
+# Reset temporal history as well?
+bool reset_temporal_history
+
+# Reset Gaussian primitives?
+bool reset_primitives
+
+# Confirmation required (safety check)
+bool confirm
+
+---
+# -----------------------------------------------------------------------------
+# Response
+# -----------------------------------------------------------------------------
+
+# Success flag
+bool success
+
+# Status message
+string message
+
+# Number of cells cleared
+uint32 cells_cleared
+
+# Number of primitives cleared
+uint32 primitives_cleared
+
+# Memory freed (bytes)
+uint64 memory_freed
+
+# New map statistics after reset
+uint32 remaining_cells
+float32 remaining_coverage

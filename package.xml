@@ -1,0 +1,114 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>hesfm</name>
+  <version>1.0.0</version>
+  <description>
+    HESFM: Hierarchical Evidential Semantic-Functional Mapping
+    
+    A novel semantic mapping framework for uncertainty-aware robot navigation featuring:
+    - Multi-source uncertainty decomposition (semantic, spatial, observation, temporal)
+    - Hierarchical Gaussian primitive representation with DST fusion
+    - Adaptive anisotropic kernel BKI
+    - Extended semantic state with reachability and affordances
+    - Real-time performance on embedded platforms (Jetson Orin)
+    
+    Designed for indoor robot navigation with Intel RealSense D455 RGB-D camera.
+  </description>
+
+  <maintainer email="thanhnc@jaist.ac.jp">Thanh Nguyen Canh</maintainer>
+  
+  <author email="thanhnc@jaist.ac.jp">Thanh Nguyen Canh</author>
+  <author email="zhang.hl@jaist.ac.jp">Haolan Zhang</author>
+  <author email="xiemhoang@vnu.edu.vn">Xiem HoangVan</author>
+  <author email="chong@jaist.ac.jp">Nak Young Chong</author>
+
+  <license>BSD-3-Clause</license>
+
+  <url type="website">https://github.com/thanhnguyencanh/hesfm</url>
+  <url type="repository">https://github.com/thanhnguyencanh/hesfm.git</url>
+  <url type="bugtracker">https://github.com/thanhnguyencanh/hesfm/issues</url>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <!-- ==================== -->
+  <!-- ROS Build Dependencies -->
+  <!-- ==================== -->
+  <build_depend>roscpp</build_depend>
+  <build_depend>rospy</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>nav_msgs</build_depend>
+  <build_depend>visualization_msgs</build_depend>
+  <build_depend>cv_bridge</build_depend>
+  <build_depend>image_transport</build_depend>
+  <build_depend>tf2</build_depend>
+  <build_depend>tf2_ros</build_depend>
+  <build_depend>tf2_sensor_msgs</build_depend>
+  <build_depend>tf2_geometry_msgs</build_depend>
+  <build_depend>pcl_ros</build_depend>
+  <build_depend>pcl_conversions</build_depend>
+  <build_depend>message_generation</build_depend>
+  <build_depend>dynamic_reconfigure</build_depend>
+  <build_depend>nodelet</build_depend>
+
+  <!-- ==================== -->
+  <!-- System Dependencies -->
+  <!-- ==================== -->
+  <build_depend>eigen</build_depend>
+  <build_depend>libpcl-all-dev</build_depend>
+  <build_depend>libopencv-dev</build_depend>
+
+  <!-- ==================== -->
+  <!-- ROS Exec Dependencies -->
+  <!-- ==================== -->
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>image_transport</exec_depend>
+  <exec_depend>tf2</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>tf2_sensor_msgs</exec_depend>
+  <exec_depend>tf2_geometry_msgs</exec_depend>
+  <exec_depend>pcl_ros</exec_depend>
+  <exec_depend>pcl_conversions</exec_depend>
+  <exec_depend>message_runtime</exec_depend>
+  <exec_depend>dynamic_reconfigure</exec_depend>
+  <exec_depend>nodelet</exec_depend>
+
+  <!-- ==================== -->
+  <!-- Hardware Dependencies -->
+  <!-- ==================== -->
+  <exec_depend>realsense2_camera</exec_depend>
+  <exec_depend>realsense2_description</exec_depend>
+
+  <!-- ==================== -->
+  <!-- Python Dependencies -->
+  <!-- ==================== -->
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-sklearn</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <!-- ==================== -->
+  <!-- Documentation -->
+  <!-- ==================== -->
+  <doc_depend>doxygen</doc_depend>
+
+  <!-- ==================== -->
+  <!-- Test Dependencies -->
+  <!-- ==================== -->
+  <test_depend>rostest</test_depend>
+  <test_depend>roslaunch</test_depend>
+
+  <export>
+    <nodelet plugin="${prefix}/nodelet_plugins.xml"/>
+  </export>
+
+</package>

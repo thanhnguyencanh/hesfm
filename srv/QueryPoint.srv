@@ -1,0 +1,75 @@
+# =============================================================================
+# QueryPoint.srv
+# =============================================================================
+# Query semantic information at a specific 3D position
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Request
+# -----------------------------------------------------------------------------
+
+# Query position
+geometry_msgs/Point position
+
+# Query radius (for neighborhood queries)
+# If 0, returns exact cell only
+float32 radius
+
+# Include probability distribution?
+bool include_probabilities
+
+# Include neighboring cells info?
+bool include_neighbors
+
+---
+# -----------------------------------------------------------------------------
+# Response
+# -----------------------------------------------------------------------------
+
+# Success flag
+bool success
+
+# Error message if not successful
+string message
+
+# Was a cell found at this position?
+bool cell_found
+
+# Predicted semantic class
+uint8 semantic_class
+
+# Class name (human readable)
+string class_name
+
+# Class probabilities (if requested)
+float32[] class_probabilities
+
+# Confidence [0, 1]
+float32 confidence
+
+# Uncertainty [0, 1]
+float32 uncertainty
+
+# Number of observations
+uint32 observation_count
+
+# Is this location traversable?
+bool is_traversable
+
+# Is this location occupied by obstacle?
+bool is_occupied
+
+# Reachability [0, 1]
+float32 reachability
+
+# Navigation cost [-1 = unknown, 0 = free, 100 = lethal]
+int8 nav_cost
+
+# Distance to nearest obstacle (meters)
+float32 distance_to_obstacle
+
+# Entropy of class distribution
+float32 entropy
+
+# Cell center position (may differ from query if using radius)
+geometry_msgs/Point cell_position

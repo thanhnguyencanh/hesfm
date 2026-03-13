@@ -1,0 +1,65 @@
+# =============================================================================
+# LoadMap.srv
+# =============================================================================
+# Load a semantic map from a file
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Request
+# -----------------------------------------------------------------------------
+
+# Full path to map file
+string filepath
+
+# Clear existing map before loading?
+bool clear_existing
+
+# Merge mode (if not clearing):
+# 0 = overwrite (new data replaces old)
+# 1 = average (blend observations)
+# 2 = max_confidence (keep higher confidence)
+uint8 merge_mode
+
+uint8 MERGE_OVERWRITE = 0
+uint8 MERGE_AVERAGE = 1
+uint8 MERGE_MAX_CONFIDENCE = 2
+
+# Transform to apply to loaded map
+geometry_msgs/Transform transform
+
+# Apply transform?
+bool apply_transform
+
+# Load costmap as well (if available)?
+bool load_costmap
+
+---
+# -----------------------------------------------------------------------------
+# Response
+# -----------------------------------------------------------------------------
+
+# Success flag
+bool success
+
+# Error message if failed
+string message
+
+# Number of cells loaded
+uint32 num_cells_loaded
+
+# Number of cells merged (if not clearing)
+uint32 num_cells_merged
+
+# Map statistics after loading
+float32 coverage
+float32 mean_confidence
+uint32 total_cells
+
+# Loaded map info
+float64 resolution
+geometry_msgs/Point origin
+geometry_msgs/Vector3 dimensions
+uint8 num_classes
+
+# Load time (ms)
+float32 load_time_ms

@@ -1,0 +1,67 @@
+# =============================================================================
+# QueryRegion.srv
+# =============================================================================
+# Query semantic information within a 3D bounding box
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Request
+# -----------------------------------------------------------------------------
+
+# Bounding box
+geometry_msgs/Point min_point
+geometry_msgs/Point max_point
+
+# Filter by class (empty = all classes)
+uint8[] filter_classes
+
+# Minimum confidence threshold
+float32 min_confidence
+
+# Include individual cells?
+bool include_cells
+
+# Compute statistics?
+bool compute_statistics
+
+---
+# -----------------------------------------------------------------------------
+# Response
+# -----------------------------------------------------------------------------
+
+# Success flag
+bool success
+
+# Error message
+string message
+
+# Number of cells in region
+uint32 num_cells
+
+# Number of observed cells
+uint32 num_observed
+
+# Number of traversable cells
+uint32 num_traversable
+
+# Number of obstacle cells
+uint32 num_obstacles
+
+# Dominant class in region
+uint8 dominant_class
+string dominant_class_name
+float32 dominant_class_fraction
+
+# Class distribution (count per class)
+uint32[] class_counts
+
+# Region statistics
+float32 mean_confidence
+float32 mean_uncertainty
+float32 coverage  # fraction of cells observed
+
+# Individual cells (if requested)
+hesfm/SemanticMapCell[] cells
+
+# Centroid of observed cells
+geometry_msgs/Point centroid

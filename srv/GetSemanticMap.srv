@@ -1,0 +1,64 @@
+# =============================================================================
+# GetSemanticMap.srv
+# =============================================================================
+# Request the current semantic map or a portion of it
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Request
+# -----------------------------------------------------------------------------
+
+# Bounding box filter (optional)
+# If all zeros, returns full map
+geometry_msgs/Point bounding_box_min
+geometry_msgs/Point bounding_box_max
+
+# Use bounding box filter?
+bool use_bounding_box
+
+# Minimum confidence threshold [0, 1]
+# Cells with confidence below this are excluded
+float32 min_confidence
+
+# Minimum observation count
+# Cells with fewer observations are excluded
+uint32 min_observations
+
+# Include full probability distribution?
+# If false, only returns predicted class
+bool include_probabilities
+
+# Include uncertainty information?
+bool include_uncertainty
+
+# Maximum number of cells to return (0 = unlimited)
+uint32 max_cells
+
+# Downsample factor (1 = full resolution, 2 = half, etc.)
+uint8 downsample_factor
+
+# Output format: "cells" or "pointcloud"
+string output_format
+
+---
+# -----------------------------------------------------------------------------
+# Response
+# -----------------------------------------------------------------------------
+
+# Success flag
+bool success
+
+# Error/status message
+string message
+
+# Semantic map (if output_format == "cells")
+hesfm/SemanticMap semantic_map
+
+# Point cloud representation (if output_format == "pointcloud")
+sensor_msgs/PointCloud2 point_cloud
+
+# Number of cells returned
+uint32 num_cells
+
+# Query processing time (ms)
+float32 processing_time_ms

@@ -1,0 +1,79 @@
+# =============================================================================
+# SaveMap.srv
+# =============================================================================
+# Save the semantic map to a file
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Request
+# -----------------------------------------------------------------------------
+
+# Output directory path
+string output_directory
+
+# Base filename (without extension)
+string filename
+
+# Output format:
+# "pcd" - Point Cloud Data format
+# "ply" - Polygon File Format
+# "bt"  - OctoMap binary format
+# "ot"  - OctoMap full format
+# "yaml" - YAML with full metadata
+# "msgpack" - MessagePack binary
+string format
+
+# Include class probabilities (increases file size significantly)
+bool save_probabilities
+
+# Include uncertainty values
+bool save_uncertainty
+
+# Include extended state (reachability, affordances)
+bool save_extended_state
+
+# Minimum confidence for saving
+float32 min_confidence
+
+# Compression level (0 = none, 9 = max)
+uint8 compression_level
+
+# Save 2D costmap as well?
+bool save_costmap
+
+# Costmap image format ("pgm", "png")
+string costmap_format
+
+---
+# -----------------------------------------------------------------------------
+# Response
+# -----------------------------------------------------------------------------
+
+# Success flag
+bool success
+
+# Error message if failed
+string message
+
+# Full path to saved map file
+string map_filepath
+
+# Full path to saved costmap (if requested)
+string costmap_filepath
+
+# Full path to metadata file
+string metadata_filepath
+
+# Number of cells saved
+uint32 num_cells_saved
+
+# File size in bytes
+uint64 file_size_bytes
+
+# Save time (ms)
+float32 save_time_ms
+
+# Map statistics at save time
+float32 coverage
+float32 mean_confidence
+float32 mean_uncertainty

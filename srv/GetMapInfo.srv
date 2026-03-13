@@ -1,0 +1,102 @@
+# =============================================================================
+# GetMapInfo.srv
+# =============================================================================
+# Get current map information and statistics without transferring full map
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Request
+# -----------------------------------------------------------------------------
+
+# Include class distribution?
+bool include_class_distribution
+
+# Include memory usage info?
+bool include_memory_info
+
+# Include timing statistics?
+bool include_timing_stats
+
+---
+# -----------------------------------------------------------------------------
+# Response
+# -----------------------------------------------------------------------------
+
+# Success flag
+bool success
+
+# -----------------------------------------------------------------------------
+# Map Configuration
+# -----------------------------------------------------------------------------
+
+string frame_id
+float64 resolution
+geometry_msgs/Point origin
+geometry_msgs/Vector3 dimensions
+uint32 size_x
+uint32 size_y
+uint32 size_z
+uint8 num_classes
+string[] class_names
+
+# -----------------------------------------------------------------------------
+# Map Statistics
+# -----------------------------------------------------------------------------
+
+# Cell counts
+uint32 total_cells
+uint32 occupied_cells
+uint32 free_cells
+uint32 unknown_cells
+uint32 traversable_cells
+uint32 obstacle_cells
+
+# Coverage
+float32 coverage  # fraction of map with observations
+
+# Uncertainty and confidence
+float32 mean_uncertainty
+float32 min_uncertainty
+float32 max_uncertainty
+float32 mean_confidence
+float32 min_confidence
+float32 max_confidence
+
+# Observation counts
+uint64 total_observations
+float32 mean_observations_per_cell
+uint32 max_observations_per_cell
+
+# -----------------------------------------------------------------------------
+# Class Distribution (if requested)
+# -----------------------------------------------------------------------------
+
+uint32[] class_cell_counts
+float32[] class_fractions
+
+# -----------------------------------------------------------------------------
+# Memory Usage (if requested)
+# -----------------------------------------------------------------------------
+
+uint64 map_memory_bytes
+uint64 primitive_memory_bytes
+uint64 temporal_history_bytes
+uint64 total_memory_bytes
+
+# -----------------------------------------------------------------------------
+# Timing Statistics (if requested)
+# -----------------------------------------------------------------------------
+
+float32 avg_update_time_ms
+float32 max_update_time_ms
+float32 avg_query_time_ms
+float32 avg_primitive_time_ms
+float32 total_runtime_seconds
+
+# -----------------------------------------------------------------------------
+# Timestamps
+# -----------------------------------------------------------------------------
+
+float64 creation_time
+float64 last_update_time
+float64 current_time

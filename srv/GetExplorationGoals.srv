@@ -1,0 +1,72 @@
+# =============================================================================
+# GetExplorationGoals.srv
+# =============================================================================
+# Compute and return exploration goals based on Extended Mutual Information
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Request
+# -----------------------------------------------------------------------------
+
+# Current robot pose
+geometry_msgs/Pose robot_pose
+
+# Maximum number of goals to return
+uint32 max_goals
+
+# Maximum distance from robot to consider
+float32 max_distance
+
+# Minimum information gain threshold
+float64 min_info_gain
+
+# Consider only frontiers?
+bool frontiers_only
+
+# Goal selection strategy:
+# "emi" - Extended Mutual Information
+# "nearest" - Nearest frontier
+# "largest" - Largest frontier
+# "hybrid" - Combination of EMI and distance
+string strategy
+
+# Sensor parameters for visibility computation
+float32 sensor_range
+float32 sensor_fov_horizontal  # radians
+float32 sensor_fov_vertical    # radians
+
+# Safety constraints
+float32 min_obstacle_distance
+bool require_reachable_path
+
+---
+# -----------------------------------------------------------------------------
+# Response
+# -----------------------------------------------------------------------------
+
+# Success flag
+bool success
+
+# Status message
+string message
+
+# Array of exploration goals (sorted by utility)
+hesfm/ExplorationGoalArray goals
+
+# Is exploration complete?
+bool exploration_complete
+
+# Current coverage [0, 1]
+float32 current_coverage
+
+# Current mean uncertainty
+float32 current_mean_uncertainty
+
+# Number of frontiers detected
+uint32 num_frontiers
+
+# Total unknown cells in map
+uint32 num_unknown_cells
+
+# Computation time (ms)
+float32 computation_time_ms

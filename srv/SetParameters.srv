@@ -1,0 +1,72 @@
+# =============================================================================
+# SetParameters.srv
+# =============================================================================
+# Dynamically update HESFM parameters at runtime
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Request
+# -----------------------------------------------------------------------------
+
+# Parameter group to update:
+# "uncertainty" - uncertainty weights
+# "kernel" - kernel parameters
+# "primitive" - Gaussian primitive parameters
+# "map" - map parameters
+# "all" - all parameters
+string parameter_group
+
+# Uncertainty weights (sum should equal 1.0)
+float32 w_semantic
+float32 w_spatial
+float32 w_observation
+float32 w_temporal
+
+# Kernel parameters
+float32 length_scale_min
+float32 length_scale_max
+float32 uncertainty_threshold
+float32 gamma
+
+# Primitive parameters
+int32 target_primitives
+int32 min_points_per_primitive
+float32 conflict_threshold
+
+# Map parameters
+float32 resolution
+float32 log_odds_min
+float32 log_odds_max
+
+# Which parameters to actually apply (bitmask or explicit flags)
+bool apply_uncertainty
+bool apply_kernel
+bool apply_primitive
+bool apply_map
+
+---
+# -----------------------------------------------------------------------------
+# Response
+# -----------------------------------------------------------------------------
+
+# Success flag
+bool success
+
+# Error/warning messages
+string message
+
+# Parameters that were successfully updated
+string[] updated_parameters
+
+# Parameters that failed to update
+string[] failed_parameters
+
+# Current parameter values after update
+float32 current_w_semantic
+float32 current_w_spatial
+float32 current_w_observation
+float32 current_w_temporal
+float32 current_length_scale_min
+float32 current_length_scale_max
+float32 current_uncertainty_threshold
+int32 current_target_primitives
