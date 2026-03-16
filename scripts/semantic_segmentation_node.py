@@ -11,6 +11,11 @@ Author: Thanh Nguyen Canh <thanhnc@jaist.ac.jp>
 Date: 2026
 """
 
+import sys
+import os
+# if sys.version_info < (3, 12):
+#     os.execv('/usr/local/bin/python3.12', ['/usr/local/bin/python3.12', __file__] + sys.argv[1:])
+
 import rospy
 import numpy as np
 import cv2
@@ -34,6 +39,7 @@ try:
     import torch
     import torch.nn.functional as F
     HAS_TORCH = True
+    rospy.logwarn("PyTorch is available: %s", torch.__version__)
 except ImportError:
     HAS_TORCH = False
     rospy.logwarn("PyTorch not available")
