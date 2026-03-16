@@ -1,6 +1,8 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0.2)
 project(hesfm)
 
+set(HESFM_VERSION "1.0.0")
+add_definitions(-DHESFM_VERSION_STRING="${HESFM_VERSION}")
 
 cmake_minimum_required(VERSION 3.0.2)
 project(hesfm)
@@ -39,19 +41,23 @@ find_package(catkin REQUIRED COMPONENTS
   image_transport
   tf2
   tf2_ros
+  tf2_eigen
   tf2_sensor_msgs
   tf2_geometry_msgs
   pcl_ros
+  message_filters
   pcl_conversions
   message_generation
   dynamic_reconfigure
   nodelet
 )
 
+  
 # System packages
 find_package(Eigen3 REQUIRED)
 find_package(PCL 1.10 REQUIRED)
 find_package(OpenCV 4 REQUIRED)
+find_package(yaml-cpp REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 
 # Optional: CUDA for GPU acceleration
@@ -59,6 +65,12 @@ find_package(CUDA QUIET)
 if(CUDA_FOUND)
   message(STATUS "CUDA found: ${CUDA_VERSION}")
   add_definitions(-DUSE_CUDA)
+endif()
+
+## OpenMP for parallel processing
+find_package(OpenMP)
+if(OPENMP_FOUND)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 endif()
 
 #==============================================================================
@@ -92,12 +104,13 @@ add_service_files(
   SetParameters.srv
 )
 
-# # Dynamic reconfigure
-# generate_dynamic_reconfigure_options(
-#   cfg/HESFM.cfg
-#   cfg/Uncertainty.cfg
-#   cfg/Kernel.cfg
-# )
+# Dynamic reconfigure
+generate_dynamic_reconfigure_options(
+  cfg/HESFMMapper.cfg
+  cfg/SemanticSegmentation.cfg
+  cfg/Costmap.cfg
+  cfg/Exploration.cfg
+)
 
 # Generate messages
 generate_messages(
@@ -117,10 +130,6 @@ catkin_package(
     include
   LIBRARIES 
     hesfm_core
-    hesfm_uncertainty
-    hesfm_primitives
-    hesfm_kernel
-    hesfm_map
   CATKIN_DEPENDS 
     roscpp 
     rospy 
@@ -133,9 +142,11 @@ catkin_package(
     image_transport 
     tf2 
     tf2_ros
+    tf2_eigen
     tf2_sensor_msgs
     tf2_geometry_msgs 
     pcl_ros 
+    message_filters
     pcl_conversions 
     message_runtime
     dynamic_reconfigure
@@ -168,277 +179,190 @@ add_definitions(
   ${PCL_DEFINITIONS}
 )
 
-#==============================================================================
-# Libraries
-#==============================================================================
+## ==========================================================================
+## HESFM Core Library
+## ==========================================================================
 
-# # Uncertainty decomposition library
-# add_library(hesfm_uncertainty
-#   src/hesfm_core/uncertainty.cpp
-# )
-# target_link_libraries(hesfm_uncertainty
-#   ${catkin_LIBRARIES}
-#   ${PCL_LIBRARIES}
-# )
-# add_dependencies(hesfm_uncertainty 
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-#   ${catkin_EXPORTED_TARGETS}
-# )
-
-# # Gaussian primitives library
-# add_library(hesfm_primitives
-#   src/hesfm_core/gaussian_primitives.cpp
-# )
-# target_link_libraries(hesfm_primitives
-#   ${catkin_LIBRARIES}
-#   ${PCL_LIBRARIES}
-# )
-# add_dependencies(hesfm_primitives 
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-#   ${catkin_EXPORTED_TARGETS}
-# )
-
-# # Adaptive kernel library
-# add_library(hesfm_kernel
-#   src/hesfm_core/adaptive_kernel.cpp
-# )
-# target_link_libraries(hesfm_kernel
-#   ${catkin_LIBRARIES}
-# )
-# add_dependencies(hesfm_kernel 
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-#   ${catkin_EXPORTED_TARGETS}
-# )
-
-# # Semantic map library
-# add_library(hesfm_map
-#   src/hesfm_core/semantic_map.cpp
-# )
-# target_link_libraries(hesfm_map
-#   hesfm_kernel
-#   ${catkin_LIBRARIES}
-#   ${PCL_LIBRARIES}
-# )
-# add_dependencies(hesfm_map 
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-#   ${catkin_EXPORTED_TARGETS}
-# )
-
-# # Combined core library
-# add_library(hesfm_core
-#   src/hesfm_core/uncertainty.cpp
-#   src/hesfm_core/gaussian_primitives.cpp
-#   src/hesfm_core/adaptive_kernel.cpp
-#   src/hesfm_core/semantic_map.cpp
-# )
-# target_link_libraries(hesfm_core
-#   ${catkin_LIBRARIES}
-#   ${PCL_LIBRARIES}
-#   ${OpenCV_LIBRARIES}
-#   ${Boost_LIBRARIES}
-# )
-# add_dependencies(hesfm_core 
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-#   ${catkin_EXPORTED_TARGETS}
-# )
-
-#==============================================================================
-# Executables
-#==============================================================================
-
-# # HESFM Mapper Node
-# add_executable(hesfm_mapper_node 
-#   src/nodes/hesfm_mapper_node.cpp
-# )
-# target_link_libraries(hesfm_mapper_node
-#   hesfm_core
-#   ${catkin_LIBRARIES}
-#   ${PCL_LIBRARIES}
-#   ${OpenCV_LIBRARIES}
-# )
-# add_dependencies(hesfm_mapper_node 
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-#   ${catkin_EXPORTED_TARGETS}
-# )
-
-# # Semantic Cloud Generator Node
-# add_executable(semantic_cloud_node 
-#   src/nodes/semantic_cloud_node.cpp
-# )
-# target_link_libraries(semantic_cloud_node
-#   ${catkin_LIBRARIES}
-#   ${PCL_LIBRARIES}
-#   ${OpenCV_LIBRARIES}
-# )
-# add_dependencies(semantic_cloud_node 
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-#   ${catkin_EXPORTED_TARGETS}
-# )
-
-# # Navigation Costmap Node
-# add_executable(costmap_node 
-#   src/nodes/costmap_node.cpp
-# )
-# target_link_libraries(costmap_node
-#   hesfm_core
-#   ${catkin_LIBRARIES}
-# )
-# add_dependencies(costmap_node 
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-#   ${catkin_EXPORTED_TARGETS}
-# )
-
-# # Map Visualization Node
-# add_executable(visualization_node 
-#   src/nodes/visualization_node.cpp
-# )
-# target_link_libraries(visualization_node
-#   hesfm_core
-#   ${catkin_LIBRARIES}
-#   ${PCL_LIBRARIES}
-# )
-# add_dependencies(visualization_node 
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-#   ${catkin_EXPORTED_TARGETS}
-# )
-
-#==============================================================================
-# Nodelets
-#==============================================================================
-
-# add_library(hesfm_nodelets
-#   src/nodelets/hesfm_mapper_nodelet.cpp
-#   src/nodelets/semantic_cloud_nodelet.cpp
-# )
-# target_link_libraries(hesfm_nodelets
-#   hesfm_core
-#   ${catkin_LIBRARIES}
-#   ${PCL_LIBRARIES}
-#   ${OpenCV_LIBRARIES}
-# )
-# add_dependencies(hesfm_nodelets 
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-#   ${catkin_EXPORTED_TARGETS}
-# )
-
-#==============================================================================
-# Install
-#==============================================================================
-
-# Install libraries
-# install(TARGETS 
-#     hesfm_core
-#     hesfm_uncertainty
-#     hesfm_primitives
-#     hesfm_kernel
-#     hesfm_map
-#     hesfm_nodelets
-#   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-#   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-#   RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
-# )
-
-# # Install executables
-# install(TARGETS 
-#     hesfm_mapper_node 
-#     semantic_cloud_node 
-#     costmap_node
-#     visualization_node
-#   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
-
-# Install headers
-install(DIRECTORY include/${PROJECT_NAME}/
-  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-  FILES_MATCHING 
-    PATTERN "*.h"
-    PATTERN "*.hpp"
+add_library(hesfm_core
+  src/hesfm_core/uncertainty.cpp
+  src/hesfm_core/gaussian_primitives.cpp
+  src/hesfm_core/adaptive_kernel.cpp
+  src/hesfm_core/semantic_map.cpp
+  src/hesfm_core/config.cpp
+  src/hesfm_core/exploration.cpp
 )
 
-# # Install Python scripts
-# catkin_install_python(PROGRAMS
-#   scripts/semantic_segmentation_node.py
-#   scripts/dformer_node.py
-#   scripts/esanet_node.py
-#   scripts/semantic_cloud_node.py
-#   scripts/visualization_node.py
-#   scripts/evaluation_node.py
-#   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
+add_dependencies(hesfm_core
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
 
-# # Install launch files
-# install(DIRECTORY launch/
-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
-#   FILES_MATCHING PATTERN "*.launch"
-# )
+target_link_libraries(hesfm_core
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  yaml-cpp
+)
 
-# # Install config files
-# install(DIRECTORY config/
-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/config
-#   FILES_MATCHING 
-#     PATTERN "*.yaml"
-#     PATTERN "*.rviz"
-# )
+## ==========================================================================
+## ROS Nodes
+## ==========================================================================
 
-# # Install RViz files
-# install(DIRECTORY rviz/
-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/rviz
-#   FILES_MATCHING PATTERN "*.rviz"
-# )
+## HESFM Mapper Node
+add_executable(hesfm_mapper_node
+  src/nodes/hesfm_mapper_node.cpp
+)
 
-# # Install nodelet plugin description
-# install(FILES nodelet_plugins.xml
-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-# )
+add_dependencies(hesfm_mapper_node
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+  ${PROJECT_NAME}_gencfg
+)
 
-#==============================================================================
-# Testing
-#==============================================================================
+target_link_libraries(hesfm_mapper_node
+  hesfm_core
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+)
 
-# if(CATKIN_ENABLE_TESTING)
-#   find_package(rostest REQUIRED)
+## Semantic Cloud Node
+add_executable(semantic_cloud_node
+  src/nodes/semantic_cloud_node.cpp
+)
+
+add_dependencies(semantic_cloud_node
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+
+target_link_libraries(semantic_cloud_node
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+)
+
+## Visualization Node
+add_executable(visualization_node
+  src/nodes/visualization_node.cpp
+)
+
+add_dependencies(visualization_node
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+
+target_link_libraries(visualization_node
+  hesfm_core
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+)
+
+
+## ==========================================================================
+## Nodelets
+## ==========================================================================
+
+add_library(hesfm_nodelets
+  src/nodelets/hesfm_mapper_nodelet.cpp
+  src/nodelets/semantic_cloud_nodelet.cpp
+)
+
+add_dependencies(hesfm_nodelets
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+  ${PROJECT_NAME}_gencfg
+)
+
+target_link_libraries(hesfm_nodelets
+  hesfm_core
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+)
+
+## ==========================================================================
+## Install
+## ==========================================================================
+
+## Install libraries
+install(TARGETS hesfm_core hesfm_nodelets
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+)
+
+## Install executables
+install(TARGETS 
+  hesfm_mapper_node
+  semantic_cloud_node
+  visualization_node
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+## Install headers
+install(DIRECTORY include/${PROJECT_NAME}/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+  FILES_MATCHING PATTERN "*.h"
+)
+
+## Install launch files
+install(DIRECTORY launch/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+  FILES_MATCHING PATTERN "*.launch"
+)
+
+## Install config files
+install(DIRECTORY config/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/config
+  FILES_MATCHING PATTERN "*.yaml"
+)
+
+## Install rviz files
+install(DIRECTORY rviz/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/rviz
+  FILES_MATCHING PATTERN "*.rviz"
+)
+
+## Install Python scripts
+catkin_install_python(PROGRAMS
+  scripts/semantic_segmentation_node.py
+  scripts/evaluation_node.py
+  scripts/dataset_loader.py
+  scripts/fps_monitor.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+## Install nodelet plugin description
+install(FILES nodelet_plugins.xml
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
+
+## ==========================================================================
+## Testing
+## ==========================================================================
+
+if(CATKIN_ENABLE_TESTING)
+  find_package(rostest REQUIRED)
+  find_package(GTest REQUIRED)
   
-#   # Unit tests
-#   catkin_add_gtest(test_uncertainty test/test_uncertainty.cpp)
-#   target_link_libraries(test_uncertainty hesfm_uncertainty ${catkin_LIBRARIES})
-  
-#   catkin_add_gtest(test_primitives test/test_primitives.cpp)
-#   target_link_libraries(test_primitives hesfm_primitives ${catkin_LIBRARIES})
-  
-#   catkin_add_gtest(test_kernel test/test_kernel.cpp)
-#   target_link_libraries(test_kernel hesfm_kernel ${catkin_LIBRARIES})
-  
-#   catkin_add_gtest(test_map test/test_map.cpp)
-#   target_link_libraries(test_map hesfm_map ${catkin_LIBRARIES})
-  
-#   # Integration tests
-#   add_rostest(test/hesfm_integration.test)
-  
-#   # Launch file tests
-#   roslaunch_add_file_check(launch)
-# endif()
-
-#==============================================================================
-# Documentation
-#==============================================================================
-
-find_package(Doxygen QUIET)
-if(DOXYGEN_FOUND)
-  set(DOXYGEN_INPUT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-  set(DOXYGEN_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/docs)
-  
-  configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile
-    @ONLY
+  ## C++ unit tests
+  catkin_add_gtest(test_uncertainty test/test_uncertainty.cpp)
+  target_link_libraries(test_uncertainty
+    hesfm_core
+    ${catkin_LIBRARIES}
+    ${GTEST_LIBRARIES}
   )
   
-  add_custom_target(docs
-    COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    COMMENT "Generating API documentation with Doxygen"
-    VERBATIM
+  catkin_add_gtest(test_primitives test/test_primitives.cpp)
+  target_link_libraries(test_primitives
+    hesfm_core
+    ${catkin_LIBRARIES}
+    ${GTEST_LIBRARIES}
   )
+  
+  ## Python tests
+  catkin_add_nosetests(test/test_hesfm.py)
 endif()
 
 #==============================================================================

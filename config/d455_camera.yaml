@@ -1,0 +1,250 @@
+# =============================================================================
+# Intel RealSense D455 Camera Configuration
+# Optimized for indoor semantic mapping with HESFM
+# =============================================================================
+#
+# This configuration provides optimal settings for:
+# - Indoor office/home environments
+# - 0.1 - 6.0 meter depth range
+# - Low-light conditions
+# - Reduced noise with post-processing filters
+#
+# Author: Thanh Nguyen Canh <thanhnc@jaist.ac.jp>
+# Date: 2026
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Device Settings
+# -----------------------------------------------------------------------------
+device:
+  # Leave empty to use first available device
+  serial_no: ""
+  usb_port_id: ""
+  
+  # Initial reset on startup
+  initial_reset: false
+
+# -----------------------------------------------------------------------------
+# Color Stream Settings
+# -----------------------------------------------------------------------------
+color:
+  enabled: true
+  width: 640
+  height: 480
+  fps: 30
+  format: "RGB8"
+  
+  # Auto exposure
+  enable_auto_exposure: true
+  exposure: 166  # microseconds (manual mode)
+  gain: 64
+  
+  # White balance
+  enable_auto_white_balance: true
+  white_balance: 4600
+  
+  # Brightness/contrast
+  brightness: 0
+  contrast: 50
+  saturation: 64
+  sharpness: 50
+  
+  # Backlight compensation
+  backlight_compensation: 0
+  
+  # Power line frequency (0=disabled, 1=50Hz, 2=60Hz)
+  power_line_frequency: 1
+
+# -----------------------------------------------------------------------------
+# Depth Stream Settings
+# -----------------------------------------------------------------------------
+depth:
+  enabled: true
+  width: 640
+  height: 480
+  fps: 30
+  format: "Z16"
+  
+  # Visual preset
+  # 0: Custom, 1: Default, 2: Hand, 3: High Accuracy, 
+  # 4: High Density, 5: Medium Density
+  visual_preset: 3  # High Accuracy for mapping
+  
+  # Depth units (meters per unit)
+  depth_units: 0.001  # 1mm per unit
+  
+  # Stereo module settings
+  emitter_enabled: true
+  emitter_on_off: false
+  laser_power: 150  # 0-360 mW
+  
+  # Depth controls
+  depth_offset: 0
+  
+  # Region of interest (0 = full frame)
+  roi_x: 0
+  roi_y: 0
+  roi_width: 0
+  roi_height: 0
+
+# -----------------------------------------------------------------------------
+# Infrared Stream Settings
+# -----------------------------------------------------------------------------
+infra1:
+  enabled: false
+  width: 640
+  height: 480
+  fps: 30
+
+infra2:
+  enabled: false
+  width: 640
+  height: 480
+  fps: 30
+
+# -----------------------------------------------------------------------------
+# IMU Settings
+# -----------------------------------------------------------------------------
+gyro:
+  enabled: false
+  fps: 200
+
+accel:
+  enabled: false
+  fps: 63
+
+# Unite IMU method: none, copy, linear_interpolation
+unite_imu_method: "linear_interpolation"
+
+# -----------------------------------------------------------------------------
+# Alignment
+# -----------------------------------------------------------------------------
+align_depth:
+  enabled: true
+  # Align depth to color frame for semantic mapping
+  align_to: "color"
+
+# -----------------------------------------------------------------------------
+# Point Cloud (disabled - we generate our own semantic cloud)
+# -----------------------------------------------------------------------------
+pointcloud:
+  enabled: false
+  texture_stream: "RS2_STREAM_COLOR"
+  allow_no_texture_points: false
+  ordered_pc: false
+
+# -----------------------------------------------------------------------------
+# Post-Processing Filters
+# -----------------------------------------------------------------------------
+filters:
+  # Decimation filter - reduces resolution
+  decimation:
+    enabled: true
+    filter_magnitude: 2  # 2 = half resolution
+  
+  # Spatial filter - edge-preserving smoothing
+  spatial:
+    enabled: true
+    filter_magnitude: 2
+    filter_smooth_alpha: 0.5
+    filter_smooth_delta: 20
+    holes_fill: 0  # 0=disabled, 1-5=fill level
+  
+  # Temporal filter - reduces temporal noise
+  temporal:
+    enabled: true
+    filter_smooth_alpha: 0.4
+    filter_smooth_delta: 20
+    persistence_control: 3  # 0-8, higher = more persistent
+  
+  # Hole filling filter
+  hole_filling:
+    enabled: true
+    holes_fill: 1  # 0=fill from left, 1=farthest, 2=nearest
+  
+  # Threshold filter
+  threshold:
+    enabled: true
+    min_distance: 0.1  # meters
+    max_distance: 6.0  # meters
+  
+  # Disparity transform (for spatial filter accuracy)
+  disparity:
+    enabled: true
+
+# -----------------------------------------------------------------------------
+# TF Publishing
+# -----------------------------------------------------------------------------
+tf:
+  publish_tf: true
+  tf_publish_rate: 0  # 0 = publish with camera data
+  
+  # Frame IDs
+  base_frame_id: "camera_link"
+  color_frame_id: "camera_color_frame"
+  color_optical_frame_id: "camera_color_optical_frame"
+  depth_frame_id: "camera_depth_frame"
+  depth_optical_frame_id: "camera_depth_optical_frame"
+  infra1_frame_id: "camera_infra1_frame"
+  infra1_optical_frame_id: "camera_infra1_optical_frame"
+  infra2_frame_id: "camera_infra2_frame"
+  infra2_optical_frame_id: "camera_infra2_optical_frame"
+  gyro_frame_id: "camera_gyro_frame"
+  gyro_optical_frame_id: "camera_gyro_optical_frame"
+  accel_frame_id: "camera_accel_frame"
+  accel_optical_frame_id: "camera_accel_optical_frame"
+
+# -----------------------------------------------------------------------------
+# ROS Topics Configuration
+# -----------------------------------------------------------------------------
+topics:
+  # Image topics
+  color_image: "color/image_raw"
+  color_camera_info: "color/camera_info"
+  depth_image: "aligned_depth_to_color/image_raw"
+  depth_camera_info: "aligned_depth_to_color/camera_info"
+  infra1_image: "infra1/image_rect_raw"
+  infra2_image: "infra2/image_rect_raw"
+  
+  # IMU topics
+  gyro: "gyro/sample"
+  accel: "accel/sample"
+  imu: "imu"
+  
+  # Diagnostics
+  diagnostics: "diagnostics"
+
+# -----------------------------------------------------------------------------
+# Quality of Service
+# -----------------------------------------------------------------------------
+qos:
+  # History depth
+  history_depth: 10
+  
+  # Reliability: reliable, best_effort
+  reliability: "reliable"
+  
+  # Durability: volatile, transient_local
+  durability: "volatile"
+
+# -----------------------------------------------------------------------------
+# Advanced Settings
+# -----------------------------------------------------------------------------
+advanced:
+  # JSON file with advanced camera settings
+  json_file_path: ""
+  
+  # Rosbag recording
+  rosbag_filename: ""
+  
+  # Diagnostics
+  diagnostics_period: 0.0
+  
+  # Clip distance (0 = disabled)
+  clip_distance: -1.0
+  
+  # Linear acceleration covariance
+  linear_accel_cov: 0.01
+  
+  # Angular velocity covariance
+  angular_velocity_cov: 0.01

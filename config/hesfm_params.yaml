@@ -1,0 +1,406 @@
+# =============================================================================
+# HESFM Configuration File
+# Hierarchical Evidential Semantic-Functional Mapping
+# =============================================================================
+#
+# This file contains all configurable parameters for the HESFM system.
+# Load with: rosparam load hesfm_params.yaml
+#
+# Author: Thanh Nguyen Canh <thanhnc@jaist.ac.jp>
+# Date: 2026
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Frame IDs
+# -----------------------------------------------------------------------------
+frames:
+  map_frame: "map"
+  odom_frame: "odom"
+  base_frame: "base_link"
+  sensor_frame: "camera_color_optical_frame"
+
+# -----------------------------------------------------------------------------
+# Semantic Map Configuration
+# -----------------------------------------------------------------------------
+map:
+  # Voxel resolution in meters
+  resolution: 0.05
+  
+  # Map dimensions (meters)
+  size_x: 20.0
+  size_y: 20.0
+  size_z: 3.0
+  
+  # Map origin (minimum corner)
+  origin_x: -10.0
+  origin_y: -10.0
+  origin_z: -0.5
+  
+  # Number of semantic classes (NYUv2: 40)
+  num_classes: 40
+  
+  # Log-odds bounds for numerical stability
+  log_odds_min: -10.0
+  log_odds_max: 10.0
+  
+  # Prior probability (uniform)
+  prior_prob: 0.025  # 1/40
+  
+  # Maximum number of cells (memory limit)
+  max_cells: 2000000
+
+# -----------------------------------------------------------------------------
+# Semantic Segmentation Configuration
+# -----------------------------------------------------------------------------
+segmentation:
+  # Backend: dformer, esanet_trt, esanet_pytorch, auto
+  backend: "dformer"
+  
+  # Input resolution
+  input_width: 640
+  input_height: 480
+  
+  # Number of classes
+  num_classes: 40
+  
+  # Confidence threshold for predictions
+  confidence_threshold: 0.3
+  
+  # Model paths (relative to package)
+  dformer_model_path: "models/dformer_large_nyuv2.pth"
+  esanet_model_path: "models/esanet_r34_nyuv2.pth"
+  esanet_trt_engine: "models/esanet_r34_nyuv2_fp16.engine"
+  
+  # Performance options
+  use_cuda: true
+  fp16: true
+  async_inference: false
+  
+  # Output options
+  publish_color: true
+  publish_probabilities: false
+  publish_uncertainty: true
+
+  # NYUv2 40-class names
+  class_names:
+    - "wall"           # 0
+    - "floor"          # 1
+    - "cabinet"        # 2
+    - "bed"            # 3
+    - "chair"          # 4
+    - "sofa"           # 5
+    - "table"          # 6
+    - "door"           # 7
+    - "window"         # 8
+    - "bookshelf"      # 9
+    - "picture"        # 10
+    - "counter"        # 11
+    - "blinds"         # 12
+    - "desk"           # 13
+    - "shelves"        # 14
+    - "curtain"        # 15
+    - "dresser"        # 16
+    - "pillow"         # 17
+    - "mirror"         # 18
+    - "floor_mat"      # 19
+    - "clothes"        # 20
+    - "ceiling"        # 21
+    - "books"          # 22
+    - "fridge"         # 23
+    - "television"     # 24
+    - "paper"          # 25
+    - "towel"          # 26
+    - "shower_curtain" # 27
+    - "box"            # 28
+    - "whiteboard"     # 29
+    - "person"         # 30
+    - "night_stand"    # 31
+    - "toilet"         # 32
+    - "sink"           # 33
+    - "lamp"           # 34
+    - "bathtub"        # 35
+    - "bag"            # 36
+    - "otherstructure" # 37
+    - "otherfurniture" # 38
+    - "otherprop"      # 39
+
+# -----------------------------------------------------------------------------
+# Uncertainty Decomposition Configuration
+# -----------------------------------------------------------------------------
+uncertainty:
+  # Component weights (should sum to 1.0)
+  w_semantic: 0.40      # Semantic uncertainty from EDL
+  w_spatial: 0.20       # Spatial consistency
+  w_observation: 0.25   # Sensor model uncertainty
+  w_temporal: 0.15      # Temporal prediction consistency
+  
+  # Spatial uncertainty parameters
+  spatial_radius: 0.2   # Neighborhood radius (meters)
+  min_neighbors: 3      # Minimum neighbors for valid computation
+  
+  # Observation uncertainty coefficients
+  sigma_range: 0.5      # Range-based uncertainty weight
+  sigma_density: 0.3    # Density-based uncertainty weight
+  sigma_angle: 0.2      # Incidence angle uncertainty weight
+  max_density: 100.0    # Maximum expected point density
+  
+  # Temporal tracking
+  temporal_resolution: 0.05  # Spatial hash resolution
+  temporal_window: 10        # Number of observations to track
+
+# -----------------------------------------------------------------------------
+# Gaussian Primitive Configuration
+# -----------------------------------------------------------------------------
+primitives:
+  # Target number of primitives per frame
+  target_primitives: 128
+  
+  # Minimum points required to form a primitive
+  min_points_per_primitive: 5
+  
+  # Maximum points per primitive
+  max_points_per_primitive: 1000
+  
+  # DST conflict threshold
+  conflict_threshold: 0.3
+  
+  # Covariance regularization
+  regularization: 0.001
+  
+  # Uncertainty weighting in clustering
+  uncertainty_weight_lambda: 1.0
+  
+  # K-means parameters
+  kmeans_max_iter: 100
+  kmeans_tolerance: 0.0001
+
+# -----------------------------------------------------------------------------
+# Adaptive Kernel Configuration
+# -----------------------------------------------------------------------------
+kernel:
+  # Length scale bounds (meters)
+  length_scale_min: 0.1
+  length_scale_max: 0.5
+  
+  # Uncertainty gating
+  uncertainty_threshold: 0.7   # Gate threshold (kernel=0 above this)
+  uncertainty_low: 0.3         # Low uncertainty reference
+  gamma: 2.0                   # Gating sharpness
+  
+  # Reachability kernel
+  reachability_lambda: 1.0
+  
+  # Confidence weighting
+  confidence_weight_beta: 2.0
+  entropy_weight_gamma: 1.0
+  
+  # Kernel type: sparse, rbf
+  kernel_type: "sparse"
+
+# -----------------------------------------------------------------------------
+# Navigation Configuration
+# -----------------------------------------------------------------------------
+navigation:
+  # Height range for 2D costmap projection
+  costmap_height_min: 0.0
+  costmap_height_max: 0.5
+  
+  # Cost values
+  free_cost: 0
+  unknown_cost: -1
+  obstacle_cost: 100
+  
+  # Inflation parameters
+  inflation_radius: 0.3
+  cost_scaling_factor: 10.0
+  
+  # Minimum confidence for cost assignment
+  min_confidence: 0.3
+  
+  # Traversable classes (floor=1, floor_mat=19)
+  traversable_classes: [1, 19]
+  
+  # Obstacle classes
+  obstacle_classes: [0, 3, 4, 5, 6, 7, 8, 9, 13, 14, 16, 23, 24, 30, 32, 33, 35]
+  
+  # Per-class semantic costs [0-100]
+  # Lower = more traversable, Higher = more obstacle-like
+  semantic_costs:
+    0: 80    # wall
+    1: 0     # floor (traversable)
+    2: 80    # cabinet
+    3: 90    # bed
+    4: 85    # chair
+    5: 90    # sofa
+    6: 80    # table
+    7: 70    # door (semi-traversable)
+    8: 100   # window
+    9: 70    # bookshelf
+    10: 30   # picture
+    11: 70   # counter
+    12: 20   # blinds
+    13: 80   # desk
+    14: 60   # shelves
+    15: 10   # curtain
+    16: 70   # dresser
+    17: 10   # pillow
+    18: 50   # mirror
+    19: 0    # floor_mat (traversable)
+    20: 20   # clothes
+    21: 0    # ceiling (irrelevant for ground robot)
+    22: 30   # books
+    23: 90   # fridge
+    24: 90   # television
+    25: 10   # paper
+    26: 10   # towel
+    27: 20   # shower_curtain
+    28: 40   # box
+    29: 50   # whiteboard
+    30: 100  # person (dynamic obstacle)
+    31: 70   # night_stand
+    32: 90   # toilet
+    33: 80   # sink
+    34: 30   # lamp
+    35: 90   # bathtub
+    36: 30   # bag
+    37: 60   # otherstructure
+    38: 60   # otherfurniture
+    39: 40   # otherprop
+
+# -----------------------------------------------------------------------------
+# Exploration Configuration
+# -----------------------------------------------------------------------------
+exploration:
+  # Maximum exploration distance from robot
+  max_distance: 10.0
+  
+  # Minimum information gain threshold
+  min_info_gain: 0.1
+  
+  # Maximum number of goals to generate
+  max_goals: 10
+  
+  # Sensor parameters for visibility computation
+  sensor_range: 6.0
+  sensor_fov_horizontal: 1.2  # radians (~69 degrees)
+  sensor_fov_vertical: 0.9    # radians (~52 degrees)
+  
+  # Safety constraints
+  min_obstacle_distance: 0.5
+  
+  # Utility weights
+  weight_info_gain: 1.0
+  weight_distance: 0.3
+  weight_uncertainty: 0.5
+  
+  # Frontier detection
+  min_frontier_size: 10
+  
+  # Update rate (Hz)
+  update_rate: 1.0
+
+# -----------------------------------------------------------------------------
+# Sensor Configuration (Intel RealSense D455)
+# -----------------------------------------------------------------------------
+sensor:
+  # Range limits
+  max_range: 6.0
+  min_range: 0.1
+  
+  # Measurement noise
+  range_sigma: 0.02
+  angular_sigma: 0.01
+  
+  # Local density computation
+  density_radius: 0.1
+  
+  # Camera intrinsics (640x480)
+  fx: 386.0
+  fy: 386.0
+  cx: 320.0
+  cy: 240.0
+  width: 640
+  height: 480
+
+# -----------------------------------------------------------------------------
+# Processing Configuration
+# -----------------------------------------------------------------------------
+processing:
+  # Publishing rates (Hz)
+  map_publish_rate: 2.0
+  costmap_publish_rate: 5.0
+  primitive_publish_rate: 10.0
+  
+  # Point cloud processing
+  downsample_factor: 2
+  voxel_filter_size: 0.02
+  
+  # Threading
+  num_threads: 4
+  use_async_processing: true
+  
+  # Queue sizes
+  queue_size: 10
+
+# -----------------------------------------------------------------------------
+# Visualization Configuration
+# -----------------------------------------------------------------------------
+visualization:
+  # Point size for RViz
+  point_size: 0.05
+  
+  # Publish class legend
+  publish_legend: true
+  
+  # Highlight specific class (-1 = show all)
+  highlight_class: -1
+  
+  # Primitive visualization
+  show_primitives: true
+  primitive_alpha: 0.5
+  
+  # Uncertainty colormap: green (low) to red (high)
+  uncertainty_colormap: "jet"
+  
+  # Class colors (RGB, 0-255)
+  class_colors:
+    0: [128, 128, 128]   # wall - gray
+    1: [139, 119, 101]   # floor - brown
+    2: [244, 164, 96]    # cabinet - sandy brown
+    3: [255, 182, 193]   # bed - light pink
+    4: [255, 215, 0]     # chair - gold
+    5: [220, 20, 60]     # sofa - crimson
+    6: [255, 140, 0]     # table - dark orange
+    7: [139, 69, 19]     # door - saddle brown
+    8: [135, 206, 235]   # window - sky blue
+    9: [160, 82, 45]     # bookshelf - sienna
+    10: [255, 105, 180]  # picture - hot pink
+    11: [0, 128, 128]    # counter - teal
+    12: [210, 180, 140]  # blinds - tan
+    13: [70, 130, 180]   # desk - steel blue
+    14: [188, 143, 143]  # shelves - rosy brown
+    15: [147, 112, 219]  # curtain - medium purple
+    16: [222, 184, 135]  # dresser - burlywood
+    17: [255, 228, 225]  # pillow - misty rose
+    18: [192, 192, 192]  # mirror - silver
+    19: [139, 119, 101]  # floor_mat - brown
+    20: [128, 0, 128]    # clothes - purple
+    21: [245, 245, 245]  # ceiling - white smoke
+    22: [139, 90, 43]    # books - peru
+    23: [173, 216, 230]  # fridge - light blue
+    24: [0, 0, 139]      # television - dark blue
+    25: [255, 255, 224]  # paper - light yellow
+    26: [240, 255, 255]  # towel - azure
+    27: [176, 224, 230]  # shower_curtain - powder blue
+    28: [210, 105, 30]   # box - chocolate
+    29: [255, 255, 255]  # whiteboard - white
+    30: [255, 0, 0]      # person - red
+    31: [85, 107, 47]    # night_stand - dark olive green
+    32: [255, 255, 240]  # toilet - ivory
+    33: [176, 196, 222]  # sink - light steel blue
+    34: [255, 250, 205]  # lamp - lemon chiffon
+    35: [224, 255, 255]  # bathtub - light cyan
+    36: [75, 0, 130]     # bag - indigo
+    37: [169, 169, 169]  # otherstructure - dark gray
+    38: [105, 105, 105]  # otherfurniture - dim gray
+    39: [128, 128, 0]    # otherprop - olive

@@ -1,0 +1,214 @@
+<?xml version="1.0"?>
+<!--
+  hesfm_evaluation.launch
+  Launch file for HESFM evaluation and benchmarking
+  
+  Supports evaluation on:
+  - NYUv2 dataset
+  - SUN RGB-D dataset
+  - Rosbag recordings
+  
+  Computes metrics:
+  - mIoU (mean Intersection over Union)
+  - ECE (Expected Calibration Error)
+  - AUPRC (Area Under Precision-Recall Curve)
+  - Timing statistics
+  
+  Usage:
+    roslaunch hesfm hesfm_evaluation.launch dataset:=nyuv2 data_path:=/path/to/data
+    roslaunch hesfm hesfm_evaluation.launch rosbag:=/path/to/recording.bag
+  
+  Author: Thanh Nguyen Canh <thanhnc@jaist.ac.jp>
+  Date: 2026
+-->
+<launch>
+  <!-- ===================================================================== -->
+  <!-- Arguments -->
+  <!-- ===================================================================== -->
+  
+  <!-- Dataset selection -->
+  <arg name="dataset" default="nyuv2"/>  <!-- nyuv2, sunrgbd, custom -->
+  <arg name="data_path" default=""/>
+  <arg name="rosbag" default=""/>
+  <arg name="split" default="test"/>
+  
+  <!-- Evaluation options -->
+  <arg name="evaluate_segmentation" default="true"/>
+  <arg name="evaluate_mapping" default="true"/>
+  <arg name="evaluate_uncertainty" default="true"/>
+  <arg name="evaluate_timing" default="true"/>
+  
+  <!-- Ground truth -->
+  <arg name="gt_semantic_topic" default="/ground_truth/semantic"/>
+  <arg name="gt_depth_topic" default="/ground_truth/depth"/>
+  
+  <!-- Output -->
+  <arg name="output_dir" default="$(find hesfm)/evaluation/results"/>
+  <arg name="experiment_name" default="hesfm_eval"/>
+  <arg name="save_visualizations" default="true"/>
+  
+  <!-- HESFM configuration -->
+  <arg name="segmentation_backend" default="dformer"/>
+  <arg name="resolution" default="0.05"/>
+  <arg name="num_classes" default="40"/>
+  
+  <!-- Playback -->
+  <arg name="rate" default="1.0"/>
+  <arg name="start" default="0.0"/>
+  <arg name="duration" default=""/>
+  
+  <!-- ===================================================================== -->
+  <!-- Static TF for evaluation -->
+  <!-- ===================================================================== -->
+  
+  <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_camera"
+        args="0 0 0 0 0 0 map camera_link"/>
+  
+  <!-- ===================================================================== -->
+  <!-- Rosbag Playback (if provided) -->
+  <!-- ===================================================================== -->
+  
+  <group if="$(eval rosbag != '')">
+    <node pkg="rosbag" type="play" name="rosbag_player" output="screen"
+          args="--clock -r $(arg rate) -s $(arg start) $(arg rosbag)">
+      <param name="wait_for_subscribers" value="true"/>
+    </node>
+    <param name="/use_sim_time" value="true"/>
+  </group>
+  
+  <!-- ===================================================================== -->
+  <!-- Dataset Loader (for NYUv2/SUN RGB-D) -->
+  <!-- ===================================================================== -->
+  
+  <group if="$(eval rosbag == '' and data_path != '')">
+    <node name="dataset_loader" pkg="hesfm" type="dataset_loader.py"
+          output="screen" respawn="false">
+      <param name="dataset" value="$(arg dataset)"/>
+      <param name="data_path" value="$(arg data_path)"/>
+      <param name="split" value="$(arg split)"/>
+      <param name="rate" value="$(arg rate)"/>
+      <param name="publish_gt" value="true"/>
+      
+      <!-- Output topics -->
+      <remap from="color/image_raw" to="/camera/color/image_raw"/>
+      <remap from="depth/image_raw" to="/camera/depth/image_raw"/>
+      <remap from="camera_info" to="/camera/color/camera_info"/>
+      <remap from="semantic_gt" to="$(arg gt_semantic_topic)"/>
+    </node>
+    <param name="/use_sim_time" value="true"/>
+  </group>
+  
+  <!-- ===================================================================== -->
+  <!-- HESFM System (subset for evaluation) -->
+  <!-- ===================================================================== -->
+  
+  <!-- Semantic Segmentation -->
+  <node name="semantic_segmentation_node" pkg="hesfm" type="semantic_segmentation_node.py"
+        output="screen" respawn="false">
+    <remap from="color/image_raw" to="/camera/color/image_raw"/>
+    <remap from="depth/image_rect_raw" to="/camera/depth/image_raw"/>
+    <remap from="color/camera_info" to="/camera/color/camera_info"/>
+    
+    <param name="backend" value="$(arg segmentation_backend)"/>
+    <param name="num_classes" value="$(arg num_classes)"/>
+  </node>
+  
+  <!-- Semantic Point Cloud -->
+  <node name="semantic_cloud_node" pkg="hesfm" type="semantic_cloud_node"
+        output="screen" respawn="false">
+    <remap from="color/image_raw" to="/camera/color/image_raw"/>
+    <remap from="depth/image_rect_raw" to="/camera/depth/image_raw"/>
+    <remap from="color/camera_info" to="/camera/color/camera_info"/>
+    <remap from="semantic/image" to="semantic_segmentation_node/semantic_image"/>
+    
+    <param name="downsample_factor" value="1"/>
+    <param name="num_classes" value="$(arg num_classes)"/>
+  </node>
+  
+  <!-- HESFM Mapper -->
+  <node name="hesfm_mapper_node" pkg="hesfm" type="hesfm_mapper_node"
+        output="screen" respawn="false">
+    <param name="map_frame" value="map"/>
+    <param name="resolution" value="$(arg resolution)"/>
+    <param name="num_classes" value="$(arg num_classes)"/>
+  </node>
+  
+  <!-- ===================================================================== -->
+  <!-- Evaluation Node -->
+  <!-- ===================================================================== -->
+  
+  <node name="evaluation_node" pkg="hesfm" type="evaluation_node.py"
+        output="screen" respawn="false" required="true">
+    <!-- Dataset info -->
+    <param name="dataset" value="$(arg dataset)"/>
+    <param name="num_classes" value="$(arg num_classes)"/>
+    
+    <!-- Input topics -->
+    <remap from="predicted_semantic" to="semantic_segmentation_node/semantic_image"/>
+    <remap from="gt_semantic" to="$(arg gt_semantic_topic)"/>
+    <remap from="semantic_map" to="hesfm_mapper_node/semantic_map"/>
+    <remap from="uncertainty_map" to="hesfm_mapper_node/uncertainty_map"/>
+    
+    <!-- Evaluation flags -->
+    <param name="evaluate_segmentation" value="$(arg evaluate_segmentation)"/>
+    <param name="evaluate_mapping" value="$(arg evaluate_mapping)"/>
+    <param name="evaluate_uncertainty" value="$(arg evaluate_uncertainty)"/>
+    <param name="evaluate_timing" value="$(arg evaluate_timing)"/>
+    
+    <!-- Output -->
+    <param name="output_dir" value="$(arg output_dir)"/>
+    <param name="experiment_name" value="$(arg experiment_name)"/>
+    <param name="save_visualizations" value="$(arg save_visualizations)"/>
+    
+    <!-- Metrics configuration -->
+    <param name="compute_miou" value="true"/>
+    <param name="compute_ece" value="true"/>
+    <param name="compute_auprc" value="true"/>
+    <param name="ece_num_bins" value="10"/>
+    
+    <!-- Class names for reporting -->
+    <rosparam param="class_names">
+      ["wall", "floor", "cabinet", "bed", "chair", "sofa", "table",
+       "door", "window", "bookshelf", "picture", "counter", "blinds",
+       "desk", "shelves", "curtain", "dresser", "pillow", "mirror",
+       "floor_mat", "clothes", "ceiling", "books", "fridge",
+       "television", "paper", "towel", "shower_curtain", "box",
+       "whiteboard", "person", "night_stand", "toilet", "sink",
+       "lamp", "bathtub", "bag", "otherstructure", "otherfurniture",
+       "otherprop"]
+    </rosparam>
+  </node>
+  
+  <!-- ===================================================================== -->
+  <!-- Timing Statistics -->
+  <!-- ===================================================================== -->
+  
+  <group if="$(arg evaluate_timing)">
+    <node name="timing_monitor" pkg="hesfm" type="timing_monitor.py"
+          output="screen" respawn="false">
+      <param name="output_file" value="$(arg output_dir)/$(arg experiment_name)_timing.csv"/>
+      
+      <!-- Topics to monitor -->
+      <rosparam param="topics">
+        ["/semantic_segmentation_node/semantic_image",
+         "/semantic_cloud",
+         "/hesfm_mapper_node/semantic_map",
+         "/hesfm_mapper_node/primitives"]
+      </rosparam>
+    </node>
+  </group>
+  
+  <!-- ===================================================================== -->
+  <!-- Visualization Recording -->
+  <!-- ===================================================================== -->
+  
+  <group if="$(arg save_visualizations)">
+    <node name="image_saver" pkg="image_view" type="image_saver"
+          output="screen" respawn="false">
+      <remap from="image" to="evaluation_node/visualization"/>
+      <param name="save_all_image" value="false"/>
+      <param name="filename_format" value="$(arg output_dir)/vis/frame_%04d.png"/>
+    </node>
+  </group>
+  
+</launch>

@@ -47,8 +47,10 @@
   <build_depend>tf2_sensor_msgs</build_depend>
   <build_depend>tf2_geometry_msgs</build_depend>
   <build_depend>pcl_ros</build_depend>
+  <build_depend>tf2_eigen</build_depend>
   <build_depend>pcl_conversions</build_depend>
   <build_depend>message_generation</build_depend>
+  <build_depend>message_filters</build_depend>
   <build_depend>dynamic_reconfigure</build_depend>
   <build_depend>nodelet</build_depend>
 
@@ -76,6 +78,8 @@
   <exec_depend>tf2_sensor_msgs</exec_depend>
   <exec_depend>tf2_geometry_msgs</exec_depend>
   <exec_depend>pcl_ros</exec_depend>
+  <exec_depend>tf2_eigen</exec_depend>
+  <exec_depend>message_filters</exec_depend>
   <exec_depend>pcl_conversions</exec_depend>
   <exec_depend>message_runtime</exec_depend>
   <exec_depend>dynamic_reconfigure</exec_depend>
@@ -96,6 +100,16 @@
   <exec_depend>python3-sklearn</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
 
+  <!-- System Dependencies -->
+  <build_depend>eigen</build_depend>
+  <build_depend>libpcl-all-dev</build_depend>
+  <build_depend>libopencv-dev</build_depend>
+  <build_depend>libyaml-cpp-dev</build_depend>
+  <exec_depend>eigen</exec_depend>
+  <exec_depend>libpcl-all-dev</exec_depend>
+  <exec_depend>libopencv-dev</exec_depend>
+  <exec_depend>libyaml-cpp-dev</exec_depend>
+
   <!-- ==================== -->
   <!-- Documentation -->
   <!-- ==================== -->
@@ -105,7 +119,7 @@
   <!-- Test Dependencies -->
   <!-- ==================== -->
   <test_depend>rostest</test_depend>
-  <test_depend>roslaunch</test_depend>
+  <test_depend>gtest</test_depend>
 
   <export>
     <nodelet plugin="${prefix}/nodelet_plugins.xml"/>

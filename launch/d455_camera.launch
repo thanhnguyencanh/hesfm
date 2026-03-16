@@ -1,0 +1,130 @@
+<?xml version="1.0"?>
+<!--
+  d455_camera.launch
+  Launch file for Intel RealSense D455 camera
+  
+  Optimized settings for indoor semantic mapping:
+  - 640x480 @ 30fps RGB and depth
+  - Aligned depth to color
+  - Post-processing filters enabled
+  
+  Usage:
+    roslaunch hesfm d455_camera.launch
+    roslaunch hesfm d455_camera.launch camera_name:=d455
+  
+  Author: Thanh Nguyen Canh <thanhnc@jaist.ac.jp>
+  Date: 2026
+-->
+<launch>
+  <!-- ===================================================================== -->
+  <!-- Arguments -->
+  <!-- ===================================================================== -->
+  
+  <!-- Camera identification -->
+  <arg name="camera_name" default="camera"/>
+  <arg name="serial_no" default=""/>
+  <arg name="usb_port_id" default=""/>
+  
+  <!-- Resolution and framerate -->
+  <arg name="color_width" default="640"/>
+  <arg name="color_height" default="480"/>
+  <arg name="color_fps" default="30"/>
+  <arg name="depth_width" default="640"/>
+  <arg name="depth_height" default="480"/>
+  <arg name="depth_fps" default="30"/>
+  <arg name="infra_width" default="640"/>
+  <arg name="infra_height" default="480"/>
+  <arg name="infra_fps" default="30"/>
+  
+  <!-- Stream enables -->
+  <arg name="enable_color" default="true"/>
+  <arg name="enable_depth" default="true"/>
+  <arg name="enable_infra1" default="false"/>
+  <arg name="enable_infra2" default="false"/>
+  <arg name="enable_pointcloud" default="false"/>
+  <arg name="enable_gyro" default="false"/>
+  <arg name="enable_accel" default="false"/>
+  
+  <!-- Alignment -->
+  <arg name="align_depth" default="true"/>
+  
+  <!-- Post-processing filters -->
+  <arg name="filters" default="decimation,spatial,temporal,hole_filling"/>
+  
+  <!-- TF -->
+  <arg name="publish_tf" default="true"/>
+  <arg name="tf_publish_rate" default="0"/>
+  
+  <!-- ===================================================================== -->
+  <!-- RealSense Node -->
+  <!-- ===================================================================== -->
+  
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <!-- Camera identification -->
+    <arg name="camera" value="$(arg camera_name)"/>
+    <arg name="serial_no" value="$(arg serial_no)"/>
+    <arg name="usb_port_id" value="$(arg usb_port_id)"/>
+    
+    <!-- Color stream -->
+    <arg name="enable_color" value="$(arg enable_color)"/>
+    <arg name="color_width" value="$(arg color_width)"/>
+    <arg name="color_height" value="$(arg color_height)"/>
+    <arg name="color_fps" value="$(arg color_fps)"/>
+    
+    <!-- Depth stream -->
+    <arg name="enable_depth" value="$(arg enable_depth)"/>
+    <arg name="depth_width" value="$(arg depth_width)"/>
+    <arg name="depth_height" value="$(arg depth_height)"/>
+    <arg name="depth_fps" value="$(arg depth_fps)"/>
+    
+    <!-- Infrared streams -->
+    <arg name="enable_infra1" value="$(arg enable_infra1)"/>
+    <arg name="enable_infra2" value="$(arg enable_infra2)"/>
+    <arg name="infra_width" value="$(arg infra_width)"/>
+    <arg name="infra_height" value="$(arg infra_height)"/>
+    <arg name="infra_fps" value="$(arg infra_fps)"/>
+    
+    <!-- IMU -->
+    <arg name="enable_gyro" value="$(arg enable_gyro)"/>
+    <arg name="enable_accel" value="$(arg enable_accel)"/>
+    <arg name="unite_imu_method" value="linear_interpolation"/>
+    
+    <!-- Alignment and point cloud -->
+    <arg name="align_depth" value="$(arg align_depth)"/>
+    <arg name="enable_pointcloud" value="$(arg enable_pointcloud)"/>
+    
+    <!-- Filters -->
+    <arg name="filters" value="$(arg filters)"/>
+    
+    <!-- TF -->
+    <arg name="publish_tf" value="$(arg publish_tf)"/>
+    <arg name="tf_publish_rate" value="$(arg tf_publish_rate)"/>
+    
+    <!-- Additional settings -->
+    <arg name="initial_reset" value="false"/>
+    <arg name="allow_no_texture_points" value="false"/>
+    <arg name="ordered_pc" value="false"/>
+  </include>
+  
+  <!-- ===================================================================== -->
+  <!-- Filter Parameters (via dynamic reconfigure) -->
+  <!-- ===================================================================== -->
+  
+  <!-- Set filter parameters after camera starts -->
+  <node name="d455_filter_config" pkg="dynamic_reconfigure" type="dynparam"
+        args="set /$(arg camera_name)/decimation_filter 
+              '{filter_magnitude: 2}'"/>
+  
+  <node name="d455_spatial_config" pkg="dynamic_reconfigure" type="dynparam"
+        args="set /$(arg camera_name)/spatial_filter 
+              '{filter_magnitude: 2, filter_smooth_alpha: 0.5, filter_smooth_delta: 20}'"/>
+  
+  <node name="d455_temporal_config" pkg="dynamic_reconfigure" type="dynparam"
+        args="set /$(arg camera_name)/temporal_filter 
+              '{filter_smooth_alpha: 0.4, filter_smooth_delta: 20}'"/>
+  
+  <node name="d455_hole_config" pkg="dynamic_reconfigure" type="dynparam"
+        args="set /$(arg camera_name)/hole_filling_filter 
+              '{holes_fill: 1}'"/>
+  
+</launch>

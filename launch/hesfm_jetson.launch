@@ -1,0 +1,226 @@
+<?xml version="1.0"?>
+<!--
+  hesfm_jetson.launch
+  Optimized launch file for NVIDIA Jetson Orin AGX deployment
+  
+  Features:
+  - ESANet with TensorRT FP16 for real-time inference
+  - Optimized resolution and downsampling
+  - Reduced map update frequency
+  - Memory-efficient settings
+  
+  Target: >10 Hz semantic mapping on Jetson Orin AGX
+  
+  Usage:
+    roslaunch hesfm hesfm_jetson.launch
+    roslaunch hesfm hesfm_jetson.launch power_mode:=MAXN
+  
+  Author: Thanh Nguyen Canh <thanhnc@jaist.ac.jp>
+  Date: 2026
+-->
+<launch>
+  <!-- ===================================================================== -->
+  <!-- Arguments -->
+  <!-- ===================================================================== -->
+  
+  <!-- Camera -->
+  <arg name="camera_name" default="camera"/>
+  <arg name="serial_no" default=""/>
+  
+  <!-- Power mode: 15W, 30W, 50W, MAXN -->
+  <arg name="power_mode" default="50W"/>
+  
+  <!-- Frame IDs -->
+  <arg name="map_frame" default="map"/>
+  <arg name="odom_frame" default="odom"/>
+  <arg name="base_frame" default="base_link"/>
+  
+  <!-- Resolution (lower for real-time) -->
+  <arg name="color_width" default="640"/>
+  <arg name="color_height" default="480"/>
+  <arg name="depth_width" default="640"/>
+  <arg name="depth_height" default="480"/>
+  <arg name="fps" default="30"/>
+  
+  <!-- Processing (aggressive downsampling for speed) -->
+  <arg name="downsample_factor" default="4"/>
+  <arg name="map_resolution" default="0.08"/>
+  
+  <!-- TensorRT engine path -->
+  <arg name="trt_engine" default="$(find hesfm)/models/esanet_r34_nyuv2_fp16.engine"/>
+  
+  <!-- Features -->
+  <arg name="launch_exploration" default="false"/>
+  <arg name="rviz" default="false"/>
+  
+  <!-- ===================================================================== -->
+  <!-- Jetson Power Mode Configuration -->
+  <!-- ===================================================================== -->
+  
+  <!-- Set power mode (requires sudo) -->
+  <node name="set_power_mode" pkg="hesfm" type="set_jetson_power.sh"
+        args="$(arg power_mode)" output="screen" launch-prefix="sudo"/>
+  
+  <!-- ===================================================================== -->
+  <!-- Intel RealSense D455 (optimized settings) -->
+  <!-- ===================================================================== -->
+  
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="camera" value="$(arg camera_name)"/>
+    <arg name="serial_no" value="$(arg serial_no)"/>
+    
+    <!-- Reduced resolution for Jetson -->
+    <arg name="color_width" value="$(arg color_width)"/>
+    <arg name="color_height" value="$(arg color_height)"/>
+    <arg name="color_fps" value="$(arg fps)"/>
+    <arg name="depth_width" value="$(arg depth_width)"/>
+    <arg name="depth_height" value="$(arg depth_height)"/>
+    <arg name="depth_fps" value="$(arg fps)"/>
+    
+    <!-- Minimal streams -->
+    <arg name="enable_color" value="true"/>
+    <arg name="enable_depth" value="true"/>
+    <arg name="enable_infra1" value="false"/>
+    <arg name="enable_infra2" value="false"/>
+    <arg name="enable_pointcloud" value="false"/>
+    <arg name="enable_gyro" value="false"/>
+    <arg name="enable_accel" value="false"/>
+    
+    <!-- Alignment -->
+    <arg name="align_depth" value="true"/>
+    
+    <!-- Minimal filtering (done on GPU instead) -->
+    <arg name="filters" value=""/>
+  </include>
+  
+  <!-- ===================================================================== -->
+  <!-- Semantic Segmentation (TensorRT) -->
+  <!-- ===================================================================== -->
+  
+  <node name="semantic_segmentation_node" pkg="hesfm" type="semantic_segmentation_node.py"
+        output="screen" respawn="true">
+    <!-- Input topics -->
+    <remap from="color/image_raw" to="$(arg camera_name)/color/image_raw"/>
+    <remap from="depth/image_rect_raw" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
+    <remap from="color/camera_info" to="$(arg camera_name)/color/camera_info"/>
+    
+    <!-- TensorRT backend -->
+    <param name="backend" value="esanet_trt"/>
+    <param name="esanet_trt_engine" value="$(arg trt_engine)"/>
+    
+    <!-- Input configuration -->
+    <param name="input_width" value="$(arg color_width)"/>
+    <param name="input_height" value="$(arg color_height)"/>
+    <param name="num_classes" value="40"/>
+    
+    <!-- Performance options -->
+    <param name="use_cuda" value="true"/>
+    <param name="fp16" value="true"/>
+    <param name="async_inference" value="true"/>
+    
+    <!-- Output options (minimal for speed) -->
+    <param name="publish_color" value="false"/>
+    <param name="publish_probabilities" value="false"/>
+    <param name="publish_uncertainty" value="true"/>
+  </node>
+  
+  <!-- ===================================================================== -->
+  <!-- Semantic Point Cloud (optimized) -->
+  <!-- ===================================================================== -->
+  
+  <node name="semantic_cloud_node" pkg="hesfm" type="semantic_cloud_node"
+        output="screen" respawn="true">
+    <remap from="color/image_raw" to="$(arg camera_name)/color/image_raw"/>
+    <remap from="depth/image_rect_raw" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
+    <remap from="color/camera_info" to="$(arg camera_name)/color/camera_info"/>
+    <remap from="semantic/image" to="semantic_segmentation_node/semantic_image"/>
+    
+    <!-- Aggressive downsampling -->
+    <param name="downsample_factor" value="$(arg downsample_factor)"/>
+    <param name="min_depth" value="0.2"/>
+    <param name="max_depth" value="5.0"/>
+    <param name="num_classes" value="40"/>
+  </node>
+  
+  <!-- ===================================================================== -->
+  <!-- HESFM Mapper (optimized) -->
+  <!-- ===================================================================== -->
+  
+  <node name="hesfm_mapper_node" pkg="hesfm" type="hesfm_mapper_node"
+        output="screen" respawn="true">
+    <!-- Frame IDs -->
+    <param name="map_frame" value="$(arg map_frame)"/>
+    
+    <!-- Lower resolution map for speed -->
+    <param name="resolution" value="$(arg map_resolution)"/>
+    <param name="map_size_x" value="15.0"/>
+    <param name="map_size_y" value="15.0"/>
+    <param name="map_size_z" value="2.5"/>
+    <param name="num_classes" value="40"/>
+    
+    <!-- Reduced primitive count -->
+    <param name="target_primitives" value="64"/>
+    <param name="min_points_per_primitive" value="10"/>
+    
+    <!-- Lower publish rates -->
+    <param name="map_publish_rate" value="1.0"/>
+    <param name="costmap_publish_rate" value="2.0"/>
+    
+    <!-- Kernel parameters (faster) -->
+    <param name="length_scale_min" value="0.15"/>
+    <param name="length_scale_max" value="0.4"/>
+  </node>
+  
+  <!-- ===================================================================== -->
+  <!-- Costmap (simplified) -->
+  <!-- ===================================================================== -->
+  
+  <node name="costmap_node" pkg="hesfm" type="costmap_node"
+        output="screen" respawn="true">
+    <param name="map_frame" value="$(arg map_frame)"/>
+    <param name="resolution" value="$(arg map_resolution)"/>
+    <param name="size_x" value="15.0"/>
+    <param name="size_y" value="15.0"/>
+    <param name="publish_rate" value="2.0"/>
+    <param name="inflation_radius" value="0.25"/>
+    
+    <rosparam param="traversable_classes">[1, 19]</rosparam>
+  </node>
+  
+  <!-- ===================================================================== -->
+  <!-- Exploration (optional) -->
+  <!-- ===================================================================== -->
+  
+  <group if="$(arg launch_exploration)">
+    <node name="exploration_node" pkg="hesfm" type="exploration_node"
+          output="screen" respawn="true">
+      <param name="map_frame" value="$(arg map_frame)"/>
+      <param name="robot_frame" value="$(arg base_frame)"/>
+      <param name="update_rate" value="0.5"/>  <!-- Lower rate for Jetson -->
+      <param name="max_goals" value="5"/>
+      <param name="sensor_range" value="4.0"/>
+    </node>
+  </group>
+  
+  <!-- ===================================================================== -->
+  <!-- Performance Monitor -->
+  <!-- ===================================================================== -->
+  
+  <node name="jetson_monitor" pkg="hesfm" type="jetson_monitor.py"
+        output="screen" respawn="false">
+    <param name="print_interval" value="10.0"/>
+    <param name="log_to_file" value="true"/>
+    <param name="log_file" value="/tmp/hesfm_jetson_stats.csv"/>
+  </node>
+  
+  <!-- ===================================================================== -->
+  <!-- RViz (optional, resource intensive) -->
+  <!-- ===================================================================== -->
+  
+  <group if="$(arg rviz)">
+    <node name="rviz" pkg="rviz" type="rviz" 
+          args="-d $(find hesfm)/rviz/hesfm_minimal.rviz"
+          output="screen"/>
+  </group>
+  
+</launch>

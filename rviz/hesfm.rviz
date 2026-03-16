@@ -1,0 +1,126 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded: [/Global Options1, /SemanticMap1]
+      Splitter Ratio: 0.5
+    Tree Height: 700
+  - Class: rviz/Selection
+    Name: Selection
+  - Class: rviz/Tool Properties
+    Name: Tool Properties
+    Splitter Ratio: 0.588
+  - Class: rviz/Views
+    Name: Views
+    Splitter Ratio: 0.5
+  - Class: rviz/Time
+    Name: Time
+    SyncMode: 0
+    SyncSource: SemanticMap
+
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Name: Grid
+      Plane: XY
+      Plane Cell Count: 40
+      Reference Frame: <Fixed Frame>
+      Value: true
+
+    - Class: rviz/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: false
+        base_link: {Value: true}
+        camera_color_optical_frame: {Value: true}
+        map: {Value: true}
+        odom: {Value: true}
+      Marker Scale: 0.3
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Value: true
+
+    - Alpha: 1
+      Axis: Z
+      Channel Name: rgb
+      Class: rviz/PointCloud2
+      Color Transformer: RGB8
+      Decay Time: 0
+      Enabled: true
+      Name: SemanticMap
+      Position Transformer: XYZ
+      Queue Size: 1
+      Size (m): 0.05
+      Style: Flat Squares
+      Topic: /semantic_map
+      Value: true
+
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /primitives
+      Name: Primitives
+      Queue Size: 100
+      Value: true
+
+    - Alpha: 0.7
+      Class: rviz/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Costmap
+      Topic: /costmap
+      Value: true
+
+    - Class: rviz/Image
+      Enabled: true
+      Image Topic: /camera/color/image_raw
+      Name: ColorImage
+      Queue Size: 2
+      Value: true
+
+    - Class: rviz/Image
+      Enabled: true
+      Image Topic: /semantic_segmentation_node/semantic_color
+      Name: SemanticImage
+      Queue Size: 2
+      Value: true
+
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/SetInitialPose
+      Topic: /initialpose
+    - Class: rviz/SetGoal
+      Topic: /move_base_simple/goal
+  Value: true
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 15
+      Focal Point: {X: 0, Y: 0, Z: 0}
+      Name: Current View
+      Pitch: 0.785
+      Target Frame: <Fixed Frame>
+      Yaw: 0.785
+
+Window Geometry:
+  Displays: {collapsed: false}
+  Height: 1000
+  Width: 1600
+  X: 100
+  Y: 100

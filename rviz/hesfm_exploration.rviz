@@ -1,0 +1,144 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded: [/Exploration1, /Frontiers1]
+      Splitter Ratio: 0.5
+    Tree Height: 700
+  - Class: rviz/Selection
+    Name: Selection
+  - Class: rviz/Tool Properties
+    Name: Tool Properties
+  - Class: rviz/Views
+    Name: Views
+  - Class: rviz/Time
+    Name: Time
+    SyncMode: 0
+
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Name: Grid
+      Plane: XY
+      Plane Cell Count: 40
+      Value: true
+
+    - Class: rviz/TF
+      Enabled: true
+      Frames:
+        All Enabled: false
+        base_link: {Value: true}
+        map: {Value: true}
+      Marker Scale: 0.5
+      Name: TF
+      Value: true
+
+    - Alpha: 1
+      Axis: Z
+      Channel Name: rgb
+      Class: rviz/PointCloud2
+      Color Transformer: RGB8
+      Enabled: true
+      Name: SemanticMap
+      Size (m): 0.05
+      Style: Flat Squares
+      Topic: /semantic_map
+      Value: true
+
+    - Alpha: 0.5
+      Class: rviz/Map
+      Color Scheme: costmap
+      Draw Behind: true
+      Enabled: true
+      Name: Costmap
+      Topic: /costmap
+      Value: true
+
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /exploration_markers
+      Name: ExplorationGoals
+      Queue Size: 100
+      Value: true
+
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /frontiers
+      Name: Frontiers
+      Queue Size: 100
+      Value: true
+
+    - Alpha: 1
+      Axes Length: 0.5
+      Class: rviz/Pose
+      Color: 0; 255; 0
+      Enabled: true
+      Name: BestGoal
+      Shape: Arrow
+      Topic: /exploration_node/exploration_goal
+      Value: true
+
+    - Alpha: 0.8
+      Arrow Length: 0.3
+      Class: rviz/PoseArray
+      Color: 255; 200; 0
+      Enabled: true
+      Name: AllGoals
+      Shape: Arrow (Flat)
+      Topic: /exploration_goals
+      Value: true
+
+    - Alpha: 1
+      Class: rviz/Path
+      Color: 25; 255; 255
+      Enabled: true
+      Line Width: 0.03
+      Name: GlobalPath
+      Topic: /move_base/NavfnROS/plan
+      Value: true
+
+    - Class: rviz/Image
+      Enabled: true
+      Image Topic: /camera/color/image_raw
+      Name: ColorImage
+      Value: true
+
+    - Class: rviz/Image
+      Enabled: true
+      Image Topic: /semantic_segmentation_node/semantic_color
+      Name: SemanticImage
+      Value: true
+
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+    - Class: rviz/MoveCamera
+    - Class: rviz/SetInitialPose
+      Topic: /initialpose
+    - Class: rviz/SetGoal
+      Topic: /move_base_simple/goal
+  Value: true
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 20
+      Focal Point: {X: 0, Y: 0, Z: 0}
+      Name: Current View
+      Pitch: 1.2
+      Yaw: 0.785
+
+Window Geometry:
+  Height: 1000
+  Width: 1600
+  X: 100
+  Y: 100

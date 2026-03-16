@@ -1,0 +1,134 @@
+<?xml version="1.0"?>
+<!--
+  segmentation_only.launch
+  Launch file for standalone semantic segmentation
+  
+  Useful for:
+  - Testing segmentation backends
+  - Visualization without full HESFM pipeline
+  - Integration with other mapping systems
+  
+  Usage:
+    roslaunch hesfm segmentation_only.launch
+    roslaunch hesfm segmentation_only.launch backend:=esanet_trt
+    roslaunch hesfm segmentation_only.launch visualize:=true
+  
+  Author: Thanh Nguyen Canh <thanhnc@jaist.ac.jp>
+  Date: 2026
+-->
+<launch>
+  <!-- ===================================================================== -->
+  <!-- Arguments -->
+  <!-- ===================================================================== -->
+  
+  <!-- Camera -->
+  <arg name="camera_name" default="camera"/>
+  <arg name="launch_camera" default="true"/>
+  
+  <!-- Segmentation backend -->
+  <arg name="backend" default="dformer"/>  <!-- dformer, esanet_trt, esanet_pytorch, auto -->
+  
+  <!-- Input resolution -->
+  <arg name="input_width" default="640"/>
+  <arg name="input_height" default="480"/>
+  
+  <!-- Model configuration -->
+  <arg name="num_classes" default="40"/>
+  <arg name="confidence_threshold" default="0.3"/>
+  
+  <!-- Model paths -->
+  <arg name="dformer_model_path" default="$(find hesfm)/models/dformer_large_nyuv2.pth"/>
+  <arg name="esanet_model_path" default="$(find hesfm)/models/esanet_r34_nyuv2.pth"/>
+  <arg name="esanet_trt_engine" default="$(find hesfm)/models/esanet_r34_nyuv2_fp16.engine"/>
+  
+  <!-- Output options -->
+  <arg name="publish_color" default="true"/>
+  <arg name="publish_probabilities" default="false"/>
+  <arg name="publish_uncertainty" default="true"/>
+  
+  <!-- Visualization -->
+  <arg name="visualize" default="false"/>
+  
+  <!-- ===================================================================== -->
+  <!-- Camera -->
+  <!-- ===================================================================== -->
+  
+  <group if="$(arg launch_camera)">
+    <include file="$(find hesfm)/launch/d455_camera.launch">
+      <arg name="camera_name" value="$(arg camera_name)"/>
+    </include>
+  </group>
+  
+  <!-- ===================================================================== -->
+  <!-- Semantic Segmentation Node -->
+  <!-- ===================================================================== -->
+  
+  <node name="semantic_segmentation_node" pkg="hesfm" type="semantic_segmentation_node.py"
+        output="screen" respawn="false">
+    <!-- Input topics -->
+    <remap from="color/image_raw" to="$(arg camera_name)/color/image_raw"/>
+    <remap from="depth/image_rect_raw" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
+    <remap from="color/camera_info" to="$(arg camera_name)/color/camera_info"/>
+    
+    <!-- Backend selection -->
+    <param name="backend" value="$(arg backend)"/>
+    
+    <!-- Input configuration -->
+    <param name="input_width" value="$(arg input_width)"/>
+    <param name="input_height" value="$(arg input_height)"/>
+    <param name="num_classes" value="$(arg num_classes)"/>
+    <param name="confidence_threshold" value="$(arg confidence_threshold)"/>
+    
+    <!-- Model paths -->
+    <param name="dformer_model_path" value="$(arg dformer_model_path)"/>
+    <param name="esanet_model_path" value="$(arg esanet_model_path)"/>
+    <param name="esanet_trt_engine" value="$(arg esanet_trt_engine)"/>
+    
+    <!-- Output options -->
+    <param name="publish_color" value="$(arg publish_color)"/>
+    <param name="publish_probabilities" value="$(arg publish_probabilities)"/>
+    <param name="publish_uncertainty" value="$(arg publish_uncertainty)"/>
+    
+    <!-- Performance -->
+    <param name="use_cuda" value="true"/>
+    <param name="fp16" value="true"/>
+  </node>
+  
+  <!-- ===================================================================== -->
+  <!-- Visualization -->
+  <!-- ===================================================================== -->
+  
+  <group if="$(arg visualize)">
+    <!-- Image view for segmentation result -->
+    <node name="segmentation_view" pkg="image_view" type="image_view"
+          output="screen" respawn="false">
+      <remap from="image" to="semantic_segmentation_node/semantic_color"/>
+      <param name="window_name" value="Semantic Segmentation"/>
+    </node>
+    
+    <!-- Side-by-side comparison -->
+    <node name="segmentation_comparison" pkg="hesfm" type="segmentation_visualizer.py"
+          output="screen" respawn="false">
+      <remap from="color" to="$(arg camera_name)/color/image_raw"/>
+      <remap from="semantic" to="semantic_segmentation_node/semantic_color"/>
+      <remap from="depth" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
+    </node>
+    
+    <!-- RViz for depth and semantic overlay -->
+    <node name="rviz" pkg="rviz" type="rviz" 
+          args="-d $(find hesfm)/rviz/segmentation.rviz"
+          output="screen"/>
+  </group>
+  
+  <!-- ===================================================================== -->
+  <!-- Performance Monitor -->
+  <!-- ===================================================================== -->
+  
+  <node name="segmentation_fps_monitor" pkg="hesfm" type="fps_monitor.py"
+        output="screen" respawn="false">
+    <remap from="input" to="semantic_segmentation_node/semantic_image"/>
+    <param name="window_size" value="30"/>
+    <param name="print_interval" value="5.0"/>
+  </node>
+  
+</launch>

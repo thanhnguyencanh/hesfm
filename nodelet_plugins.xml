@@ -1,0 +1,68 @@
+<!--
+  nodelet_plugins.xml
+  Plugin descriptions for HESFM nodelets
+  
+  Author: Thanh Nguyen Canh <thanhnc@jaist.ac.jp>
+  Date: 2026
+-->
+<library path="lib/libhesfm_nodelets">
+  
+  <!-- HESFM Mapper Nodelet -->
+  <class name="hesfm/HESFMMapperNodelet" 
+         type="hesfm::HESFMMapperNodelet" 
+         base_class_type="nodelet::Nodelet">
+    <description>
+      HESFM Semantic Mapper Nodelet
+      
+      Performs hierarchical evidential semantic-functional mapping from
+      semantic point clouds. Uses multi-source uncertainty decomposition,
+      Gaussian primitives with DST fusion, and adaptive kernel BKI.
+      
+      Subscriptions:
+        - semantic_cloud (sensor_msgs/PointCloud2): Input semantic point cloud
+      
+      Publications:
+        - semantic_map (sensor_msgs/PointCloud2): 3D semantic map
+        - costmap (nav_msgs/OccupancyGrid): 2D navigation costmap
+        - primitives (visualization_msgs/MarkerArray): Gaussian primitives
+        - uncertainty_map (sensor_msgs/PointCloud2): Uncertainty visualization
+      
+      Services:
+        - reset_map (std_srvs/Empty): Reset the semantic map
+      
+      Parameters:
+        - map_frame (string, default: "map"): Map coordinate frame
+        - resolution (double, default: 0.05): Voxel resolution in meters
+        - num_classes (int, default: 40): Number of semantic classes
+        - target_primitives (int, default: 128): Target primitive count
+    </description>
+  </class>
+  
+  <!-- Semantic Cloud Nodelet -->
+  <class name="hesfm/SemanticCloudNodelet" 
+         type="hesfm::SemanticCloudNodelet" 
+         base_class_type="nodelet::Nodelet">
+    <description>
+      Semantic Point Cloud Generator Nodelet
+      
+      Generates semantic point clouds from synchronized RGB-D images
+      and semantic segmentation labels.
+      
+      Subscriptions:
+        - color/image_raw (sensor_msgs/Image): RGB image
+        - depth/image_rect_raw (sensor_msgs/Image): Depth image
+        - semantic/image (sensor_msgs/Image): Semantic labels
+        - color/camera_info (sensor_msgs/CameraInfo): Camera intrinsics
+      
+      Publications:
+        - semantic_cloud (sensor_msgs/PointCloud2): Semantic point cloud
+      
+      Parameters:
+        - downsample_factor (int, default: 2): Downsampling factor
+        - min_depth (double, default: 0.1): Minimum depth in meters
+        - max_depth (double, default: 6.0): Maximum depth in meters
+        - num_classes (int, default: 40): Number of semantic classes
+    </description>
+  </class>
+  
+</library>
