@@ -1,0 +1,58 @@
+FROM ctumrs/mrs_uav_system:latest
+
+FROM xurobotics/slide-slam:latest
+
+# Fix ROS key
+RUN apt-get update --allow-unauthenticated -o Acquire::AllowInsecureRepositories=true && \
+    apt-get install -y --no-install-recommends wget ca-certificates software-properties-common && \
+    wget -qO /usr/share/keyrings/ros-archive-keyring.gpg \
+      https://raw.githubusercontent.com/ros/rosdistro/master/ros.key && \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+      http://packages.ros.org/ros/ubuntu focal main" \
+      > /etc/apt/sources.list.d/ros1-latest.list && \
+    apt-get update
+
+# Build dependencies
+RUN apt-get install -y \
+    build-essential zlib1g-dev libncurses5-dev libgdbm-dev \
+    libnss3-dev libssl-dev libreadline-dev libffi-dev \
+    libsqlite3-dev libbz2-dev liblzma-dev uuid-dev
+
+# Build Python 3.12 from source (~15 min)
+RUN wget -qO /tmp/python3.12.tgz https://www.python.org/ftp/python/3.12.9/Python-3.12.9.tgz && \
+    tar -xf /tmp/python3.12.tgz -C /tmp && \
+    cd /tmp/Python-3.12.9 && \
+    ./configure --enable-optimizations --prefix=/usr/local && \
+    make -j$(nproc) && \
+    make altinstall && \
+    rm -rf /tmp/python3.12* && \
+    python3.12 -m pip install --upgrade pip
+
+# Install PyTorch with sm_120
+RUN python3.12 -m pip install --pre torch torchvision \
+      --index-url https://download.pytorch.org/whl/nightly/cu128 \
+      --no-cache-dir
+
+RUN pip3.12 install rospkg ultralytics
+
+RUN sudo apt update && sudo apt install curl
+RUN sudo apt update && sudo apt install wget
+
+RUN curl https://ctu-mrs.github.io/ppa-stable/add_ros_ppa.sh | bash
+
+RUN sudo apt install ros-noetic-desktop-full
+
+RUN curl https://ctu-mrs.github.io/ppa-stable/add_ppa.sh | bash
+
+RUN sudo apt install ros-noetic-mrs-uav-system-full
+
+RUN sudo apt update && RUN sudo apt install -y tmux tmuxinator
+
+RUN wget -qO- https://raw.githubusercontent.com | bash
+
+
+RUN sed -i '/slideslam/d' ~/.bashrc
+
+RUN echo "source /opt/activeslam_ws/devel/setup.bash" >> ~/.bashrc 
+# Verify
+RUN python3.12 -c "import torch; print(torch.__version__); print(torch.cuda.get_arch_list())"
