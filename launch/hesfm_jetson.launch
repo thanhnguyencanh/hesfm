@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
   hesfm_jetson.launch
-  Optimized launch file for NVIDIA Jetson Orin AGX deployment
+  Optimized launch file for NVIDIA Jetson Xavier AGX deployment
   
   Features:
   - ESANet with TensorRT FP16 for real-time inference
@@ -9,11 +9,10 @@
   - Reduced map update frequency
   - Memory-efficient settings
   
-  Target: >10 Hz semantic mapping on Jetson Orin AGX
+  Target: >10 Hz semantic mapping on Jetson Xavier AGX
   
   Usage:
     roslaunch hesfm hesfm_jetson.launch
-    roslaunch hesfm hesfm_jetson.launch power_mode:=MAXN
   
   Author: Thanh Nguyen Canh <thanhnc@jaist.ac.jp>
   Date: 2026
@@ -26,9 +25,6 @@
   <!-- Camera -->
   <arg name="camera_name" default="camera"/>
   <arg name="serial_no" default=""/>
-  
-  <!-- Power mode: 15W, 30W, 50W, MAXN -->
-  <arg name="power_mode" default="50W"/>
   
   <!-- Frame IDs -->
   <arg name="map_frame" default="map"/>
@@ -52,14 +48,6 @@
   <!-- Features -->
   <arg name="launch_exploration" default="false"/>
   <arg name="rviz" default="false"/>
-  
-  <!-- ===================================================================== -->
-  <!-- Jetson Power Mode Configuration -->
-  <!-- ===================================================================== -->
-  
-  <!-- Set power mode (requires sudo) -->
-  <node name="set_power_mode" pkg="hesfm" type="set_jetson_power.sh"
-        args="$(arg power_mode)" output="screen" launch-prefix="sudo"/>
   
   <!-- ===================================================================== -->
   <!-- Intel RealSense D455 (optimized settings) -->
@@ -136,11 +124,11 @@
     <remap from="semantic/image" to="semantic_segmentation_node/semantic_image"/>
     
     <!-- Aggressive downsampling -->
-    <param name="downsample_factor" value="$(arg downsample_factor)"/>
+    <!-- <param name="downsample_factor" value="$(arg downsample_factor)"/>
     <param name="min_depth" value="0.2"/>
     <param name="max_depth" value="5.0"/>
     <param name="num_classes" value="40"/>
-  </node>
+  </node> -->
   
   <!-- ===================================================================== -->
   <!-- HESFM Mapper (optimized) -->

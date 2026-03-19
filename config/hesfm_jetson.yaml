@@ -54,22 +54,25 @@ map:
 segmentation:
   # Use TensorRT for maximum speed
   backend: "esanet_trt"
-  
-  # Lower resolution input
+
+  # ESANet dataset: 'nyuv2' (40 classes) or 'sunrgbd' (37 classes)
+  esanet_dataset: "nyuv2"
+
   input_width: 640
   input_height: 480
-  
+
+  # Must match esanet_dataset (nyuv2=40, sunrgbd=37)
   num_classes: 40
-  confidence_threshold: 0.25  # Slightly lower for speed
-  
-  # TensorRT engine
+  confidence_threshold: 0.25
+
+  # TensorRT engine (built from the matching ONNX)
   esanet_trt_engine: "models/esanet_r34_nyuv2_fp16.engine"
-  
+
   # Performance options
   use_cuda: true
   fp16: true
-  async_inference: true  # Async for pipelining
-  
+  async_inference: true
+
   # Minimal outputs
   publish_color: false
   publish_probabilities: false

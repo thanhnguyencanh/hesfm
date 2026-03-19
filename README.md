@@ -78,34 +78,8 @@ A novel semantic mapping framework for uncertainty-aware robot navigation in ind
 
 ## Installation
 
-### 1. Prerequisites
 
-```bash
-# Install ROS Noetic (if not already installed)
-sudo apt update
-sudo apt install ros-noetic-desktop-full
-
-# Install RealSense SDK and ROS packages
-sudo apt install ros-noetic-realsense2-camera ros-noetic-realsense2-description
-
-# Install additional ROS dependencies
-sudo apt install \
-    ros-noetic-pcl-ros \
-    ros-noetic-cv-bridge \
-    ros-noetic-tf2-ros \
-    ros-noetic-image-transport \
-    ros-noetic-dynamic-reconfigure \
-    ros-noetic-nodelet
-
-# Install system dependencies
-sudo apt install \
-    libeigen3-dev \
-    libpcl-dev \
-    libopencv-dev \
-    libboost-all-dev
-```
-
-### 2. Create Workspace
+### 1. Create Workspace
 
 ```bash
 # Create catkin workspace
@@ -123,7 +97,7 @@ git clone https://github.com/VCIP-RGBD/DFormer.git
 git clone https://github.com/TUI-NICR/ESANet.git
 ```
 
-### 3. Python Environment
+<!-- ### 2. Python Environment
 
 ```bash
 # Create conda environment
@@ -145,6 +119,51 @@ pip install \
 
 # For DFormer
 pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.1/index.html
+``` -->
+### 2. Docker
+```
+sudo docker build -f Dockerfile.blackwell -t activesemanticslam:latest . 2>&1 | tee build.log
+
+sudo docker stop semanticslam_ros
+
+sudo docker rm semanticslam_ros
+
+sudo rm -rf ~/.bash_aliases
+
+touch ~/.bash_aliases
+
+sudo ./run_semantic_slam_docker.sh
+
+docker start semanticslam_ros
+docker exec -it semanticslam_ros /bin/bash
+```
+
+### 3. Prerequisites
+
+```bash
+# Install ROS Noetic (if not already installed)
+sudo apt update
+sudo apt install ros-noetic-desktop-full
+
+# Install RealSense SDK and ROS packages
+sudo apt install ros-noetic-realsense2-camera ros-noetic-realsense2-description
+
+# Install additional ROS dependencies
+sudo apt install \
+    ros-noetic-pcl-ros \
+    ros-noetic-cv-bridge \
+    ros-noetic-tf2-ros \
+    ros-noetic-tf2-sensor-msgs \
+    ros-noetic-image-transport \
+    ros-noetic-dynamic-reconfigure \
+    ros-noetic-nodelet
+
+# Install system dependencies
+sudo apt install \
+    libeigen3-dev \
+    libpcl-dev \
+    libopencv-dev \
+    libboost-all-dev
 ```
 
 ### 4. Download Pretrained Models
@@ -160,9 +179,57 @@ mkdir -p checkpoints
 # Download DFormer_Large_NYU.pth to checkpoints/
 
 # Download ESANet weights (NYUv2)
-cd ~/hesfm_ws/src/ESANet/trained_models
+cd checkpoints
 gdown 1C5-kJv4w3foicEudP3DAjdIXVuzUK7O8
 tar -xvzf nyuv2_r34_NBt1D.tar.gz
+```
+
+#### On the desktop 
+
+Step 1: Create clean environment
+```
+conda create -n esanet_trt python=3.10 -y
+conda activate esanet_trt
+```
+
+Step 2: Install compatible versions
+```
+pip install torch==1.13.1 torchvision==0.14.1 --index-url https://download.pytorch.org/whl/cu117
+pip install onnx==1.14.1 numpy==1.24.0
+```
+
+Step 3: Export
+```
+cd ~/sslam_ws/src/ESANet
+python model_to_onnx.py \
+    --dataset nyuv2 \
+    --height 480 --width 640 \
+    --encoder resnet34 \
+    --encoder_block NonBottleneck1D \
+    --modality rgbd \
+    --last_ckpt ./trained_models/nyuv2/r34_NBt1D.pth \
+    --model_output_name esanet_r34_nyuv2_v11 \
+    --onnx_opset_version 11
+```
+
+Step 4: Verify
+```
+python -c "
+import onnx
+m = onnx.load('onnx_models/esanet_r34_nyuv2_v11.onnx')
+print(f'Opset: {m.opset_import[0].version}')
+onnx.checker.check_model(m)
+print('✅ Valid')
+"
+```
+#### Copy to Jetson
+#### On Xavier - build TensorRT engine
+```
+/usr/src/tensorrt/bin/trtexec \
+    --onnx=/home/jetson/models/esanet_r34_nyuv2_v11.onnx \
+    --saveEngine=/home/jetson/models/esanet_r34_nyuv2_fp16.engine \
+    --fp16 \
+    --memPoolSize=workspace:1024MiB
 ```
 
 ### 5. Build Package

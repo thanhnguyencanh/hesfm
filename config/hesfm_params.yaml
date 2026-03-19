@@ -54,28 +54,32 @@ map:
 # -----------------------------------------------------------------------------
 segmentation:
   # Backend: dformer, esanet_trt, esanet_pytorch, auto
-  backend: "dformer"
-  
+  backend: "esanet_pytorch"
+
+  # ESANet dataset: 'nyuv2' (40 classes) or 'sunrgbd' (37 classes)
+  # Controls depth normalization stats and colour palette.
+  esanet_dataset: "nyuv2"
+
   # Input resolution
   input_width: 640
   input_height: 480
-  
-  # Number of classes
+
+  # Number of classes — must match esanet_dataset (nyuv2=40, sunrgbd=37)
   num_classes: 40
-  
+
   # Confidence threshold for predictions
   confidence_threshold: 0.3
-  
+
   # Model paths (relative to package)
   dformer_model_path: "models/dformer_large_nyuv2.pth"
-  esanet_model_path: "models/esanet_r34_nyuv2.pth"
-  esanet_trt_engine: "models/esanet_r34_nyuv2_fp16.engine"
-  
+  esanet_model_path:  "models/esanet_r34_nyuv2.pth"
+  esanet_trt_engine:  "models/esanet_r34_nyuv2_fp16.engine"
+
   # Performance options
   use_cuda: true
   fp16: true
   async_inference: false
-  
+
   # Output options
   publish_color: true
   publish_probabilities: false

@@ -68,41 +68,68 @@ esanet_pytorch:
   # Model variant
   encoder: "resnet34"
   encoder_block: "NonBottleneck1D"
-  
+
+  # Dataset the checkpoint was trained on: 'nyuv2' (40 classes) or 'sunrgbd' (37 classes)
+  # Selects correct depth normalization stats and colour palette automatically.
+  dataset: "nyuv2"
+
   # Pretrained weights
-  model_path: "models/esanet_r34_nbt1d_nyuv2.pth"
-  
+  model_path: "models/esanet_r34_nyuv2.pth"
+
   # Input configuration
   input_height: 480
   input_width: 640
-  
+
   # Modalities
   modality: "rgbd"  # rgb, depth, rgbd
-  
+
   # Inference settings
   use_cuda: true
   fp16: true
-  
-  # Normalization
+
+  # RGB normalization (ImageNet)
   rgb_mean: [0.485, 0.456, 0.406]
   rgb_std: [0.229, 0.224, 0.225]
-  depth_mean: 2842.9  # mm
-  depth_std: 1449.3   # mm
-  depth_scale: 1.0    # If depth in meters, set to 1000
-  
-  # Architecture settings
-  num_classes: 40
-  decoder_channels_bottleneck: 512
-  channels_decoder: [512, 256, 128]
-  
-  # Context module
-  context_module: "ppm"  # ppm, appm, none
-  
+
+  # Depth normalization — must match training dataset (depth in mm, valid pixels only)
+  # NYUv2  (Kinect v1):               mean=2841.94941  std=1417.25943
+  # SUN RGB-D (multi-sensor incl. RS): mean=19025.14930 std=9880.91607
+  depth_mean: 2841.94941272766   # mm
+  depth_std:  1417.2594281672277 # mm
+  # Note: depth_callback stores depth in metres; preprocess always multiplies by 1000
+
+  # Architecture settings (ESANet-R34-NBt1D defaults)
+  num_classes: 40          # 40 for nyuv2, 37 for sunrgbd
+  decoder_channels_mode: "decreasing"
+  context_module: "ppm"
+
   # Performance
   # Expected: ~45 FPS on RTX 3080
   batch_size: 1
-  
+
   # Output
+  output_probabilities: true
+  output_uncertainty: true
+
+# SUN RGB-D variant — swap in when using the sunrgbd checkpoint
+esanet_pytorch_sunrgbd:
+  encoder: "resnet34"
+  encoder_block: "NonBottleneck1D"
+  dataset: "sunrgbd"
+  model_path: "models/esanet_r34_sunrgbd.pth"
+  input_height: 480
+  input_width: 640
+  modality: "rgbd"
+  use_cuda: true
+  fp16: true
+  rgb_mean: [0.485, 0.456, 0.406]
+  rgb_std: [0.229, 0.224, 0.225]
+  depth_mean: 19025.14930492213
+  depth_std:  9880.916071806689
+  num_classes: 37
+  decoder_channels_mode: "decreasing"
+  context_module: "ppm"
+  batch_size: 1
   output_probabilities: true
   output_uncertainty: true
 
@@ -125,11 +152,11 @@ esanet_trt:
   input_depth_name: "depth"
   output_name: "output"
   
-  # Normalization (applied before inference)
+  # Normalization (applied before inference) — must match training dataset
   rgb_mean: [0.485, 0.456, 0.406]
   rgb_std: [0.229, 0.224, 0.225]
-  depth_mean: 2842.9
-  depth_std: 1449.3
+  depth_mean: 2841.94941272766   # mm (NYUv2)
+  depth_std:  1417.2594281672277 # mm (NYUv2)
   
   # TensorRT settings
   max_workspace_size: 1073741824  # 1 GB
