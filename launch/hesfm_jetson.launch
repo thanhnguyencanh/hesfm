@@ -43,11 +43,12 @@
   <arg name="map_resolution" default="0.08"/>
   
   <!-- TensorRT engine path -->
-  <arg name="trt_engine" default="$(find hesfm)/models/esanet_r34_nyuv2_fp16.engine"/>
+  <arg name="trt_engine" default="$(find hesfm)/models/esanet_r34_sunrgbd_fp16.engine"/>
+  <arg name="esanet_dataset" default="sunrgbd"/>
   
   <!-- Features -->
   <arg name="launch_exploration" default="false"/>
-  <arg name="rviz" default="false"/>
+  <arg name="rviz" default="true"/>
   
   <!-- ===================================================================== -->
   <!-- Intel RealSense D455 (optimized settings) -->
@@ -99,7 +100,7 @@
     <!-- Input configuration -->
     <param name="input_width" value="$(arg color_width)"/>
     <param name="input_height" value="$(arg color_height)"/>
-    <param name="num_classes" value="40"/>
+    <param name="num_classes" value="37"/>
     
     <!-- Performance options -->
     <param name="use_cuda" value="true"/>
@@ -107,7 +108,7 @@
     <param name="async_inference" value="true"/>
     
     <!-- Output options (minimal for speed) -->
-    <param name="publish_color" value="false"/>
+    <param name="publish_color" value="true"/>
     <param name="publish_probabilities" value="false"/>
     <param name="publish_uncertainty" value="true"/>
   </node>
@@ -124,11 +125,11 @@
     <remap from="semantic/image" to="semantic_segmentation_node/semantic_image"/>
     
     <!-- Aggressive downsampling -->
-    <!-- <param name="downsample_factor" value="$(arg downsample_factor)"/>
+    <param name="downsample_factor" value="$(arg downsample_factor)"/>
     <param name="min_depth" value="0.2"/>
     <param name="max_depth" value="5.0"/>
-    <param name="num_classes" value="40"/>
-  </node> -->
+    <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
+  </node>
   
   <!-- ===================================================================== -->
   <!-- HESFM Mapper (optimized) -->
@@ -144,7 +145,7 @@
     <param name="map_size_x" value="15.0"/>
     <param name="map_size_y" value="15.0"/>
     <param name="map_size_z" value="2.5"/>
-    <param name="num_classes" value="40"/>
+    <param name="num_classes" value="37"/>
     
     <!-- Reduced primitive count -->
     <param name="target_primitives" value="64"/>
@@ -163,7 +164,7 @@
   <!-- Costmap (simplified) -->
   <!-- ===================================================================== -->
   
-  <node name="costmap_node" pkg="hesfm" type="costmap_node"
+  <!-- <node name="costmap_node" pkg="hesfm" type="costmap_node"
         output="screen" respawn="true">
     <param name="map_frame" value="$(arg map_frame)"/>
     <param name="resolution" value="$(arg map_resolution)"/>
@@ -174,7 +175,7 @@
     
     <rosparam param="traversable_classes">[1, 19]</rosparam>
   </node>
-  
+   -->
   <!-- ===================================================================== -->
   <!-- Exploration (optional) -->
   <!-- ===================================================================== -->
@@ -183,7 +184,7 @@
     <node name="exploration_node" pkg="hesfm" type="exploration_node"
           output="screen" respawn="true">
       <param name="map_frame" value="$(arg map_frame)"/>
-      <param name="robot_frame" value="$(arg base_frame)"/>
+      <param name="robot_frame" value="$(arg base_frame)"/>       
       <param name="update_rate" value="0.5"/>  <!-- Lower rate for Jetson -->
       <param name="max_goals" value="5"/>
       <param name="sensor_range" value="4.0"/>
@@ -191,23 +192,12 @@
   </group>
   
   <!-- ===================================================================== -->
-  <!-- Performance Monitor -->
-  <!-- ===================================================================== -->
-  
-  <node name="jetson_monitor" pkg="hesfm" type="jetson_monitor.py"
-        output="screen" respawn="false">
-    <param name="print_interval" value="10.0"/>
-    <param name="log_to_file" value="true"/>
-    <param name="log_file" value="/tmp/hesfm_jetson_stats.csv"/>
-  </node>
-  
-  <!-- ===================================================================== -->
   <!-- RViz (optional, resource intensive) -->
   <!-- ===================================================================== -->
   
   <group if="$(arg rviz)">
     <node name="rviz" pkg="rviz" type="rviz" 
-          args="-d $(find hesfm)/rviz/hesfm_minimal.rviz"
+          args="-d $(find hesfm)/rviz/hesfm.rviz"
           output="screen"/>
   </group>
   

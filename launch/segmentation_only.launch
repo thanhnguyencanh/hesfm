@@ -28,7 +28,7 @@
   <arg name="launch_camera" default="true"/>
   
   <!-- Segmentation backend -->
-  <arg name="backend" default="esanet_pytorch"/>  <!-- dformer, esanet_trt, esanet_pytorch, auto -->
+  <arg name="backend" default="esanet_trt"/>  <!-- dformer, esanet_trt, esanet_pytorch, auto -->
 
   <!-- ESANet dataset: 'nyuv2' (40 classes) or 'sunrgbd' (37 classes) -->
   <arg name="esanet_dataset" default="sunrgbd"/>
@@ -42,17 +42,19 @@
   <arg name="confidence_threshold" default="0.3"/>
 
   <!-- Model paths -->
-  <arg name="dformer_model_path" default="$(find hesfm)/models/dformer_large_nyuv2.pth"/>
+  <arg name="dformer_model_path" default="$(find hesfm)/models/dformer_large_sunrgbd.pth"/>
   <arg name="esanet_model_path"  default="$(find hesfm)/models/esanet_r34_sunrgbd.pth"/>
   <arg name="esanet_trt_engine"  default="$(find hesfm)/models/esanet_r34_sunrgbd_fp16.engine"/>
   
   <!-- Output options -->
   <arg name="publish_color" default="true"/>
-  <arg name="publish_probabilities" default="false"/>
+  <arg name="publish_probabilities" default="true"/>
   <arg name="publish_uncertainty" default="true"/>
   
   <!-- Visualization -->
   <arg name="visualize" default="false"/>
+  <arg name="rviz" default="true"/>
+  <arg name="monitor" default="false"/>
   
   <!-- ===================================================================== -->
   <!-- Camera -->
@@ -127,12 +129,16 @@
           args="-d $(find hesfm)/rviz/hesfm.rviz"
           output="screen"/>
   </group>
+
+  <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz" 
+          args="-d $(find hesfm)/rviz/hesfm.rviz"
+          output="screen"/>
   
   <!-- ===================================================================== -->
   <!-- Performance Monitor -->
   <!-- ===================================================================== -->
   
-  <node name="segmentation_fps_monitor" pkg="hesfm" type="fps_monitor.py"
+  <node if="$(arg monitor)" name="segmentation_fps_monitor" pkg="hesfm" type="fps_monitor.py"
         output="screen" respawn="false">
     <remap from="input" to="semantic_segmentation_node/semantic_image"/>
     <param name="window_size" value="30"/>

@@ -31,13 +31,16 @@
   <arg name="base_frame" default="base_link"/>
   
   <!-- Segmentation backend: dformer, esanet_trt, esanet_pytorch -->
-  <arg name="segmentation_backend" default="dformer"/>
-  
+  <arg name="segmentation_backend" default="esanet_trt"/>
+
+  <!-- ESANet dataset: 'nyuv2' (40 classes) or 'sunrgbd' (37 classes) -->
+  <arg name="esanet_dataset" default="sunrgbd"/>
+
   <!-- Processing options -->
   <arg name="downsample_factor" default="2"/>
-  <arg name="num_classes" default="40"/>
+  <arg name="num_classes" default="37"/>
   
-  <!-- Map parameters -->
+  <!-- Map parameters -->     
   <arg name="resolution" default="0.05"/>
   <arg name="map_size_x" default="20.0"/>
   <arg name="map_size_y" default="20.0"/>
@@ -46,9 +49,9 @@
   <!-- Feature toggles -->
   <arg name="launch_camera" default="true"/>
   <arg name="launch_segmentation" default="true"/>
-  <arg name="launch_mapper" default="true"/>
-  <arg name="launch_costmap" default="true"/>
-  <arg name="launch_visualization" default="true"/>
+  <arg name="launch_mapper" default="false"/>
+  <arg name="launch_costmap" default="false"/>
+  <arg name="launch_visualization" default="false"/>
   <arg name="rviz" default="false"/>
   
   <!-- Config file -->
@@ -79,15 +82,16 @@
       
       <!-- Parameters -->
       <param name="backend" value="$(arg segmentation_backend)"/>
+      <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
       <param name="num_classes" value="$(arg num_classes)"/>
       <param name="input_height" value="480"/>
       <param name="input_width" value="640"/>
       <param name="confidence_threshold" value="0.3"/>
-      
-      <!-- Model paths (adjust based on backend) -->
-      <param name="dformer_model_path" value="$(find hesfm)/models/dformer_large_nyuv2.pth"/>
-      <param name="esanet_model_path" value="$(find hesfm)/models/esanet_r34_nyuv2.pth"/>
-      <param name="esanet_trt_engine" value="$(find hesfm)/models/esanet_r34_nyuv2_fp16.engine"/>
+
+      <!-- Model paths -->
+      <param name="dformer_model_path" value="$(find hesfm)/models/dformer_large_sunrgbd.pth"/>
+      <param name="esanet_model_path" value="$(find hesfm)/models/esanet_r34_sunrgbd.pth"/>
+      <param name="esanet_trt_engine" value="$(find hesfm)/models/esanet_r34_sunrgbd_fp16.engine"/>
     </node>
   </group>
   
@@ -107,8 +111,9 @@
     <param name="downsample_factor" value="$(arg downsample_factor)"/>
     <param name="min_depth" value="0.1"/>
     <param name="max_depth" value="6.0"/>
-    <param name="num_classes" value="$(arg num_classes)"/>
+    <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
     <param name="default_uncertainty" value="0.3"/>
+    <param name="queue_size" value="30"/>
   </node>
   
   <!-- ===================================================================== -->
