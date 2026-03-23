@@ -85,7 +85,7 @@
       <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
       <param name="num_classes" value="$(arg num_classes)"/>
       <param name="input_height" value="480"/>
-      <param name="input_width" value="640"/>
+      <param name="input_width" value="480"/>
       <param name="confidence_threshold" value="0.3"/>
 
       <!-- Model paths -->
