@@ -50,6 +50,7 @@ public:
         setupPublishers();
         
         ROS_INFO("Semantic Cloud Node initialized");
+        ROS_INFO("  Dataset:          %s (%d classes)", dataset_.c_str(), num_classes_);
         ROS_INFO("  Downsample factor: %d", downsample_factor_);
         ROS_INFO("  Min depth: %.2f m, Max depth: %.2f m", min_depth_, max_depth_);
     }
@@ -60,18 +61,31 @@ private:
     // =========================================================================
     
     void loadParameters() {
+        // Dataset selection: 'nyuv2' (40 classes) or 'sunrgbd' (37 classes)
+        pnh_.param<std::string>("esanet_dataset", dataset_, "nyuv2");
+        if (dataset_ == "sunrgbd") {
+            num_classes_       = hesfm::SUNRGBD_NUM_CLASSES;
+            class_names_       = hesfm::SUNRGBD_CLASS_NAMES;
+            traversable_set_   = hesfm::SUNRGBD_TRAVERSABLE_CLASSES;
+            class_colors_      = hesfm::SUNRGBD_CLASS_COLORS;
+        } else {
+            num_classes_       = hesfm::NYUV2_NUM_CLASSES;
+            class_names_       = hesfm::NYUV2_CLASS_NAMES;
+            traversable_set_   = hesfm::DEFAULT_TRAVERSABLE_CLASSES;
+            class_colors_      = hesfm::NYUV2_CLASS_COLORS;
+        }
+
+        // Allow explicit override from launch file
+        pnh_.param("num_classes", num_classes_, num_classes_);
+
         // Processing parameters
         pnh_.param("downsample_factor", downsample_factor_, 2);
         pnh_.param("min_depth", min_depth_, 0.1);
         pnh_.param("max_depth", max_depth_, 6.0);
-        pnh_.param("num_classes", num_classes_, 40);
-        
-        // Default uncertainty if not provided
-        pnh_.param("default_uncertainty", default_uncertainty_, 0.3);
-        
+
         // Queue sizes
         pnh_.param("queue_size", queue_size_, 10);
-        
+
         // Frame ID override
         pnh_.param<std::string>("output_frame", output_frame_, "");
     }
@@ -85,22 +99,24 @@ private:
         rgb_sub_.subscribe(nh_, "color/image_raw", queue_size_);
         depth_sub_.subscribe(nh_, "depth/image_rect_raw", queue_size_);
         semantic_sub_.subscribe(nh_, "semantic/image", queue_size_);
-        
+
         // Approximate time synchronizer
+        // Use a larger queue and generous interval to handle segmentation delay (~90ms)
         sync_ = std::make_shared<Sync>(SyncPolicy(queue_size_),
                                         rgb_sub_, depth_sub_, semantic_sub_);
+        sync_->setMaxIntervalDuration(ros::Duration(0.5));  // allow up to 500ms skew
         sync_->registerCallback(boost::bind(&SemanticCloudNode::syncCallback,
                                             this, _1, _2, _3));
         
-        ROS_INFO("Subscribed to synchronized topics");
+        // ROS_INFO("Subscribed to synchronized topics");
     }
     
     void setupPublishers() {
         // Semantic point cloud publisher
         cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("semantic_cloud", 1);
-        
+
         // Debug visualization (optional)
-        debug_pub_ = it_.advertise("semantic_cloud/debug", 1);
+        // debug_pub_ = it_.advertise("semantic_cloud/debug", 1);
     }
     
     // =========================================================================
@@ -125,36 +141,44 @@ private:
                       const sensor_msgs::Image::ConstPtr& semantic_msg) {
         
         if (!has_camera_info_) {
-            ROS_WARN_THROTTLE(1.0, "Waiting for camera info...");
+            ROS_WARN_THROTTLE(1.0, "[cloud] waiting for camera info");
             return;
         }
-        
-        ros::Time start_time = ros::Time::now();
-        
-        // Convert images
+
+        // Debug: uncomment to check camera info / timestamps / image sizes
+        // ROS_INFO_ONCE("[cloud] camera info ready (fx=%.1f fy=%.1f cx=%.1f cy=%.1f %dx%d)",
+        //               fx_, fy_, cx_, cy_, width_, height_);
+        // double dt_depth    = std::abs((depth_msg->header.stamp    - rgb_msg->header.stamp).toSec());
+        // double dt_semantic = std::abs((semantic_msg->header.stamp - rgb_msg->header.stamp).toSec());
+        // ROS_INFO_THROTTLE(2.0, "[cloud] sync: dt_depth=%.3fs dt_semantic=%.3fs", dt_depth, dt_semantic);
+        // ros::Time start_time = ros::Time::now();
+
         cv_bridge::CvImageConstPtr rgb_cv, depth_cv, semantic_cv;
-        
         try {
-            rgb_cv = cv_bridge::toCvShare(rgb_msg, "bgr8");
-            depth_cv = cv_bridge::toCvShare(depth_msg);
+            rgb_cv      = cv_bridge::toCvShare(rgb_msg, "bgr8");
+            depth_cv    = cv_bridge::toCvShare(depth_msg);
             semantic_cv = cv_bridge::toCvShare(semantic_msg);
         } catch (cv_bridge::Exception& e) {
-            ROS_ERROR("cv_bridge exception: %s", e.what());
+            ROS_ERROR("[cloud] cv_bridge: %s", e.what());
             return;
         }
-        
-        // Generate semantic point cloud
+
+        // Debug: uncomment to verify image dimensions and encodings
+        // ROS_INFO_ONCE("[cloud] rgb=%dx%d enc=%s | depth=%dx%d enc=%s | semantic=%dx%d enc=%s",
+        //               rgb_cv->image.cols, rgb_cv->image.rows, rgb_msg->encoding.c_str(),
+        //               depth_cv->image.cols, depth_cv->image.rows, depth_msg->encoding.c_str(),
+        //               semantic_cv->image.cols, semantic_cv->image.rows, semantic_msg->encoding.c_str());
+
         sensor_msgs::PointCloud2 cloud_msg;
         generateSemanticCloud(rgb_cv->image, depth_cv->image, semantic_cv->image,
                               rgb_msg->header, cloud_msg);
-        
-        // Publish
+
         cloud_pub_.publish(cloud_msg);
-        
-        // Debug timing
-        double processing_time = (ros::Time::now() - start_time).toSec() * 1000.0;
-        ROS_DEBUG("Generated semantic cloud with %d points in %.1f ms",
-                  cloud_msg.width * cloud_msg.height, processing_time);
+
+        // Debug: uncomment to monitor point count and processing time
+        // ROS_INFO_THROTTLE(2.0, "[cloud] %u points generated", cloud_msg.width);
+        // double processing_time = (ros::Time::now() - start_time).toSec() * 1000.0;
+        // ROS_INFO_THROTTLE(2.0, "[cloud] total=%.1f ms", processing_time);
     }
     
     // =========================================================================
@@ -193,12 +217,14 @@ private:
         double cx = cx_ / downsample_factor_;
         double cy = cy_ / downsample_factor_;
         
-        // Count valid points
+        // Count valid points (valid depth AND valid semantic label)
         int valid_count = 0;
         for (int v = 0; v < out_height; ++v) {
             for (int u = 0; u < out_width; ++u) {
                 float d = getDepthValue(depth_resized, u, v);
-                if (d > min_depth_ && d < max_depth_ && std::isfinite(d)) {
+                uint32_t label = getSemanticLabel(semantic_resized, u, v);
+                if (d > min_depth_ && d < max_depth_ && std::isfinite(d) &&
+                    label < static_cast<uint32_t>(num_classes_)) {
                     valid_count++;
                 }
             }
@@ -239,7 +265,10 @@ private:
             for (int u = 0; u < out_width; ++u) {
                 float d = getDepthValue(depth_resized, u, v);
                 
-                if (d <= min_depth_ || d >= max_depth_ || !std::isfinite(d)) {
+                // Get semantic label early — skip void (255) and out-of-range
+                uint32_t label = getSemanticLabel(semantic_resized, u, v);
+                if (d <= min_depth_ || d >= max_depth_ || !std::isfinite(d) ||
+                    label >= static_cast<uint32_t>(num_classes_)) {
                     continue;
                 }
                 
@@ -248,14 +277,11 @@ private:
                 float y = (v - cy) * d / fy;
                 float z = d;
                 
-                // Get semantic label
-                uint32_t label = getSemanticLabel(semantic_resized, u, v);
-                
-                // Get RGB
-                cv::Vec3b bgr = rgb_resized.at<cv::Vec3b>(v, u);
-                uint32_t rgb = (static_cast<uint32_t>(bgr[2]) << 16) |
-                               (static_cast<uint32_t>(bgr[1]) << 8) |
-                               static_cast<uint32_t>(bgr[0]);
+                // Color by semantic class
+                const auto& color = class_colors_[label];
+                uint32_t rgb = (static_cast<uint32_t>(color[0]) << 16) |
+                               (static_cast<uint32_t>(color[1]) << 8) |
+                               static_cast<uint32_t>(color[2]);
                 
                 // Compute depth-based uncertainty
                 float uncertainty = computeUncertainty(d, u, v, out_width, out_height);
@@ -334,7 +360,7 @@ private:
     
     // Publishers
     ros::Publisher cloud_pub_;
-    image_transport::Publisher debug_pub_;
+    // image_transport::Publisher debug_pub_;  // uncomment for debug visualization
     
     // Camera parameters
     double fx_ = 386.0, fy_ = 386.0;
@@ -342,12 +368,17 @@ private:
     int width_ = 640, height_ = 480;
     bool has_camera_info_ = false;
     
+    // Dataset
+    std::string dataset_;
+    std::vector<std::string> class_names_;
+    std::set<int> traversable_set_;
+    std::vector<std::array<uint8_t,3>> class_colors_;
+
     // Processing parameters
     int downsample_factor_;
     double min_depth_;
     double max_depth_;
     int num_classes_;
-    double default_uncertainty_;
     int queue_size_;
     std::string output_frame_;
 };

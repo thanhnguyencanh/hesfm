@@ -56,17 +56,17 @@ segmentation:
   backend: "esanet_trt"
 
   # ESANet dataset: 'nyuv2' (40 classes) or 'sunrgbd' (37 classes)
-  esanet_dataset: "nyuv2"
+  esanet_dataset: "sunrgbd"
 
   input_width: 640
   input_height: 480
 
   # Must match esanet_dataset (nyuv2=40, sunrgbd=37)
-  num_classes: 40
+  num_classes: 37
   confidence_threshold: 0.25
 
   # TensorRT engine (built from the matching ONNX)
-  esanet_trt_engine: "models/esanet_r34_nyuv2_fp16.engine"
+  esanet_trt_engine: "models/esanet_r34_sunrgbd_fp16.engine"
 
   # Performance options
   use_cuda: true
@@ -105,7 +105,7 @@ uncertainty:
 # -----------------------------------------------------------------------------
 primitives:
   # Fewer primitives for speed
-  target_primitives: 64
+  target_primitives: 48
   
   # More points per primitive
   min_points_per_primitive: 10
@@ -119,7 +119,7 @@ primitives:
   
   # Fewer K-means iterations
   kmeans_max_iter: 50
-  kmeans_tolerance: 0.001
+  kmeans_tolerance4 0.001
 
 # -----------------------------------------------------------------------------
 # Adaptive Kernel (Simplified)
@@ -218,10 +218,10 @@ processing:
   voxel_filter_size: 0.03
   
   # Use all available cores
-  num_threads: 8
+  num_threads: 6
   use_async_processing: true
   
-  queue_size: 5
+  queue_size: 4
 
 # -----------------------------------------------------------------------------
 # Visualization (Minimal for Performance)

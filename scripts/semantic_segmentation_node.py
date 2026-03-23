@@ -13,15 +13,14 @@ Date: 2026
 
 import sys
 import os
+import time
+from threading import Lock
 
 import rospy
 import numpy as np
 import cv2
-import os
-import time
-from threading import Lock
 
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image
 from std_msgs.msg import Header
 from cv_bridge import CvBridge, CvBridgeError
 from dynamic_reconfigure.server import Server
@@ -37,19 +36,14 @@ try:
     import torch
     import torch.nn.functional as F
     HAS_TORCH = True
-    rospy.logwarn("PyTorch is available: %s", torch.__version__)
 except ImportError:
     HAS_TORCH = False
-    rospy.logwarn("PyTorch not available")
 
 try:
-    import numpy as np
-    if not hasattr(np, 'bool'):
-        np.bool = bool
-    if not hasattr(np, 'int'):
-        np.int = int
-    if not hasattr(np, 'float'):
-        np.float = float
+    # Patch deprecated numpy aliases before importing tensorrt/pycuda
+    if not hasattr(np, 'bool'):   np.bool   = bool
+    if not hasattr(np, 'int'):    np.int    = int
+    if not hasattr(np, 'float'):  np.float  = float
     import tensorrt as trt
     import pycuda.driver as cuda
     cuda.init()  # explicit init — do NOT use pycuda.autoinit (creates non-primary context)
@@ -106,12 +100,8 @@ class NYUv2ColorPalette:
     
     @classmethod
     def colorize(cls, labels):
-        """Convert label image to RGB."""
-        h, w = labels.shape[:2]
-        colored = np.zeros((h, w, 3), dtype=np.uint8)
-        for c in range(len(cls.COLORS)):
-            colored[labels == c] = cls.COLORS[c]
-        return colored
+        """Convert label image to RGB using vectorized numpy indexing."""
+        return cls.COLORS[np.clip(labels, 0, len(cls.COLORS) - 1)]
 
 
 class SUNRGBDColorPalette:
@@ -160,12 +150,8 @@ class SUNRGBDColorPalette:
 
     @classmethod
     def colorize(cls, labels):
-        """Convert label image to RGB."""
-        h, w = labels.shape[:2]
-        colored = np.zeros((h, w, 3), dtype=np.uint8)
-        for c in range(len(cls.COLORS)):
-            colored[labels == c] = cls.COLORS[c]
-        return colored
+        """Convert label image to RGB using vectorized numpy indexing."""
+        return cls.COLORS[np.clip(labels, 0, len(cls.COLORS) - 1)]
 
 
 class BaseSegmentationBackend:
@@ -178,119 +164,146 @@ class BaseSegmentationBackend:
         self.input_width = config.get('input_width', 640)
         self.publish_probabilities = config.get('publish_probabilities', False)
         
-    def preprocess(self, rgb, depth=None):
-        """Preprocess images for inference."""
+    def preprocess(self, *args, **kwargs):
         raise NotImplementedError
-        
-    def infer(self, rgb, depth=None):
-        """Run inference, return (labels, probabilities, uncertainty)."""
+
+    def infer(self, *args, **kwargs):
         raise NotImplementedError
-        
-    def postprocess(self, output):
-        """Postprocess network output."""
+
+    def postprocess(self, *args, **kwargs):
         raise NotImplementedError
 
 
 class DFormerBackend(BaseSegmentationBackend):
-    """DFormerv2-Large backend for RTX 4090/4080."""
-    
+    """DFormerv2-Large backend using SUN RGB-D checkpoint."""
+
+    # Normalization constants matching DFormer dataloader
+    RGB_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    RGB_STD  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    DEP_MEAN = np.array([0.48,  0.48,  0.48 ], dtype=np.float32)
+    DEP_STD  = np.array([0.28,  0.28,  0.28 ], dtype=np.float32)
+
     def __init__(self, config):
         super().__init__(config)
-        
+
         if not HAS_TORCH:
             raise RuntimeError("PyTorch required for DFormer backend")
-        
+
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.fp16 = config.get('fp16', True) and self.device.type == 'cuda'
-        
-        # Normalization
-        self.rgb_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(self.device)
-        self.rgb_std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(self.device)
-        self.depth_mean = 2.8
-        self.depth_std = 1.4
-        
-        # Load model
+        self.fp16   = config.get('fp16', False) and self.device.type == 'cuda'
+
+        # DFormerv2 on SUN RGB-D uses square 480×480 input
+        self.input_height = 480
+        self.input_width  = 480
+
         model_path = config.get('model_path', '')
         self.model = self._load_model(model_path)
-        
-        rospy.loginfo(f"DFormer backend initialized on {self.device}")
-        
+        rospy.loginfo(f"DFormer backend initialized on {self.device} (fp16={self.fp16})")
+
     def _load_model(self, model_path):
-        """Load DFormer model."""
-        # Placeholder - actual implementation depends on DFormer code
-        rospy.logwarn("DFormer model loading - implement with actual DFormer code")
-        return None
-        
+        """Build DFormer-Large and load SUN RGB-D checkpoint."""
+        dformer_dir = os.path.join(os.path.dirname(__file__), '..', 'DFormer')
+        dformer_dir = os.path.abspath(dformer_dir)
+        stubs_dir   = os.path.join(dformer_dir, 'mmstubs')
+
+        # Inject stub packages first so mmcv/mmengine/mmseg resolve without installation
+        for d in (stubs_dir, dformer_dir):
+            if d not in sys.path:
+                sys.path.insert(0, d)
+
+        try:
+            from easydict import EasyDict as edict
+            from models.builder import EncoderDecoder
+        except ImportError as e:
+            raise RuntimeError(f"Failed to import DFormer modules: {e}")
+
+        cfg = edict()
+        cfg.backbone          = 'DFormer-Large'
+        cfg.decoder           = 'ham'
+        cfg.decoder_embed_dim = 512
+        cfg.drop_path_rate    = 0.2
+        cfg.num_classes       = self.num_classes
+        cfg.pretrained_model  = None
+        cfg.bn_eps            = 1e-3
+        cfg.bn_momentum       = 0.1
+        cfg.aux_rate          = 0.0
+
+        # criterion=None skips pretrained backbone loading in EncoderDecoder
+        model = EncoderDecoder(cfg, criterion=None)
+
+        if not model_path or not os.path.isfile(model_path):
+            rospy.logwarn(f"[DFormer] checkpoint not found: {model_path}")
+            return model.to(self.device).eval()
+
+        rospy.loginfo(f"[DFormer] loading checkpoint: {model_path}")
+        ckpt = torch.load(model_path, map_location='cpu')
+        # Handle various checkpoint formats
+        state = ckpt.get('state_dict', ckpt.get('model', ckpt))
+        # Strip 'module.' prefix from DDP-saved checkpoints
+        state = {k.replace('module.', ''): v for k, v in state.items()}
+        model.load_state_dict(state, strict=False)
+        rospy.loginfo("[DFormer] checkpoint loaded")
+
+        model = model.to(self.device).eval()
+        if self.fp16:
+            model = model.half()
+        return model
+
     def preprocess(self, rgb, depth=None):
-        """Preprocess for DFormer."""
-        # Resize
-        rgb_resized = cv2.resize(rgb, (self.input_width, self.input_height))
-        
-        # To tensor and normalize
-        rgb_tensor = torch.from_numpy(rgb_resized).permute(2, 0, 1).float() / 255.0
-        rgb_tensor = rgb_tensor.unsqueeze(0).to(self.device)
-        rgb_tensor = (rgb_tensor - self.rgb_mean) / self.rgb_std
-        
-        depth_tensor = None
+        """Preprocess RGB (BGR uint8) and depth (float32 metres) for DFormer-Large."""
+        # DFormer-Large + SUNRGBD uses BGR order (only DFormerv2 uses RGB)
+        rgb_resized = cv2.resize(rgb, (self.input_width, self.input_height),
+                                  interpolation=cv2.INTER_LINEAR)
+        rgb_norm = (rgb_resized.astype(np.float32) / 255.0 - self.RGB_MEAN) / self.RGB_STD
+        rgb_tensor = torch.from_numpy(rgb_norm.transpose(2, 0, 1)).unsqueeze(0).to(self.device)
+
+        dep_tensor = None
         if depth is not None:
-            depth_resized = cv2.resize(depth, (self.input_width, self.input_height),
-                                        interpolation=cv2.INTER_NEAREST)
-            depth_tensor = torch.from_numpy(depth_resized).float().unsqueeze(0).unsqueeze(0)
-            depth_tensor = depth_tensor.to(self.device)
-            depth_tensor = (depth_tensor - self.depth_mean) / self.depth_std
-            
+            # Map depth metres → uint8 [0-255] matching SUN RGB-D depth PNG convention
+            # SUN RGB-D stores depth as uint16 PNG; cv2.IMREAD_GRAYSCALE scales to uint8 (/256)
+            # Equivalent: clip to 0-10m, scale to 0-255
+            dep_u8 = np.clip(depth / 10.0 * 255.0, 0, 255).astype(np.uint8)
+            dep_u8 = cv2.resize(dep_u8, (self.input_width, self.input_height),
+                                 interpolation=cv2.INTER_NEAREST)
+            dep_3ch = cv2.merge([dep_u8, dep_u8, dep_u8])
+            dep_norm = (dep_3ch.astype(np.float32) / 255.0 - self.DEP_MEAN) / self.DEP_STD
+            dep_tensor = torch.from_numpy(dep_norm.transpose(2, 0, 1)).unsqueeze(0).to(self.device)
+
         if self.fp16:
             rgb_tensor = rgb_tensor.half()
-            if depth_tensor is not None:
-                depth_tensor = depth_tensor.half()
-                
-        return rgb_tensor, depth_tensor
-        
+            if dep_tensor is not None:
+                dep_tensor = dep_tensor.half()
+
+        return rgb_tensor, dep_tensor
+
     def infer(self, rgb, depth=None):
-        """Run DFormer inference."""
-        if self.model is None:
-            # Return dummy output for testing
-            h, w = rgb.shape[:2]
-            labels = np.zeros((h, w), dtype=np.uint8)
-            probs = np.ones((h, w, self.num_classes), dtype=np.float32) / self.num_classes
-            uncertainty = np.ones((h, w), dtype=np.float32) * 0.5
-            return labels, probs, uncertainty
-            
-        rgb_tensor, depth_tensor = self.preprocess(rgb, depth)
-        
+        """Run DFormer inference and return (labels, probs, uncertainty)."""
+        original_size = rgb.shape[:2]
+        rgb_tensor, dep_tensor = self.preprocess(rgb, depth)
+
         with torch.no_grad():
-            if self.fp16:
-                with torch.cuda.amp.autocast():
-                    output = self.model(rgb_tensor, depth_tensor)
-            else:
-                output = self.model(rgb_tensor, depth_tensor)
-                
-        return self.postprocess(output, rgb.shape[:2])
-        
+            output = self.model(rgb_tensor, dep_tensor)  # (1, C, H, W) logits
+
+        return self.postprocess(output, original_size)
+
     def postprocess(self, output, original_size):
-        """Postprocess DFormer output."""
-        # Get probabilities
-        probs = F.softmax(output, dim=1)
-        
-        # Get labels
+        """Convert DFormer logits to labels, probs, uncertainty."""
+        probs = F.softmax(output.float(), dim=1)
         labels = torch.argmax(probs, dim=1)
-        
-        # Compute entropy-based uncertainty
         entropy = -torch.sum(probs * torch.log(probs + 1e-10), dim=1)
-        max_entropy = np.log(self.num_classes)
-        uncertainty = entropy / max_entropy
-        
-        # To numpy and resize
-        labels = labels.squeeze().cpu().numpy().astype(np.uint8)
-        probs = probs.squeeze().permute(1, 2, 0).cpu().numpy()
-        uncertainty = uncertainty.squeeze().cpu().numpy()
-        
-        # Resize to original
+        uncertainty = (entropy / np.log(self.num_classes)).squeeze().cpu().numpy()
+
+        labels_np = labels.squeeze().cpu().numpy().astype(np.uint8)
         h, w = original_size
-        labels = cv2.resize(labels, (w, h), interpolation=cv2.INTER_NEAREST)
+        labels_np  = cv2.resize(labels_np,  (w, h), interpolation=cv2.INTER_NEAREST)
         uncertainty = cv2.resize(uncertainty, (w, h), interpolation=cv2.INTER_LINEAR)
-        
-        return labels, probs, uncertainty
+
+        probs_np = None
+        if self.publish_probabilities:
+            probs_np = probs.squeeze().permute(1, 2, 0).cpu().numpy()
+            probs_np = cv2.resize(probs_np, (w, h), interpolation=cv2.INTER_LINEAR)
+
+        return labels_np, probs_np, uncertainty
 
 
 class ESANetPyTorchBackend(BaseSegmentationBackend):
@@ -375,8 +388,7 @@ class ESANetPyTorchBackend(BaseSegmentationBackend):
 
         model, _ = build_model(args, n_classes=self.num_classes)
 
-        checkpoint = torch.load(model_path,
-                                map_location=lambda storage, loc: storage)
+        checkpoint = torch.load(model_path, map_location='cpu')
         model.load_state_dict(checkpoint['state_dict'])
         rospy.loginfo(f"Loaded ESANet checkpoint from {model_path}")
 
@@ -719,6 +731,7 @@ class SemanticSegmentationNode:
             return ESANetPyTorchBackend(config)
         elif self.backend_name == 'esanet_trt':
             config['engine_path'] = self.esanet_trt_engine
+            config['dataset'] = self.esanet_dataset
             return ESANetTensorRTBackend(config)
         elif self.backend_name == 'auto':
             # Auto-select based on hardware
@@ -733,7 +746,7 @@ class SemanticSegmentationNode:
         else:
             raise ValueError(f"Unknown backend: {self.backend_name}")
             
-    def dyn_callback(self, config, level):
+    def dyn_callback(self, config, _level):
         """Dynamic reconfigure callback."""
         with self.lock:
             self.confidence_threshold = config.confidence_threshold
@@ -745,8 +758,6 @@ class SemanticSegmentationNode:
         """RGB image callback."""
         try:
             self.rgb_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-            # cv2.imshow("RGB Input", self.rgb_image)
-            # cv2.waitKey(1)
             self.rgb_stamp = msg.header.stamp
             self.process()
         except CvBridgeError as e:
@@ -768,48 +779,46 @@ class SemanticSegmentationNode:
         """Process current frame."""
         if self.rgb_image is None:
             return
-            
+
+        # Snapshot shared images under lock; run GPU inference outside it
         with self.lock:
-            start_time = time.time()
-            
-            # Run inference
-            # rospy.logwarn("Running inference - implement with actual backend")
-            labels, probs, uncertainty = self.backend.infer(self.rgb_image, self.depth_image)
-            
-            elapsed = time.time() - start_time
-            self.total_time += elapsed
-            self.frame_count += 1
-            
-            # Log FPS periodically
-            if self.frame_count % 30 == 0:
-                avg_fps = self.frame_count / self.total_time
-                rospy.loginfo(f"Segmentation FPS: {avg_fps:.1f}")
-                
-            # Create header
-            header = Header()
-            header.stamp = self.rgb_stamp
-            header.frame_id = "camera_color_optical_frame"
-            
-            # Publish semantic labels
-            semantic_msg = self.bridge.cv2_to_imgmsg(labels, encoding='mono8')
-            semantic_msg.header = header
-            self.semantic_pub.publish(semantic_msg)
-            
-            # Publish colored visualization
-            if self.publish_color:
-                palette = (SUNRGBDColorPalette if getattr(self, 'esanet_dataset', 'nyuv2') == 'sunrgbd'
-                           else NYUv2ColorPalette)
-                colored = palette.colorize(labels)
-                colored_msg = self.bridge.cv2_to_imgmsg(colored, encoding='bgr8')
-                colored_msg.header = header
-                self.semantic_color_pub.publish(colored_msg)
-                
-            # Publish uncertainty
-            if self.publish_uncertainty:
-                uncertainty_uint8 = (np.clip(uncertainty, 0.0, 1.0) * 255).astype(np.uint8)
-                uncertainty_msg = self.bridge.cv2_to_imgmsg(uncertainty_uint8, encoding='mono8')
-                uncertainty_msg.header = header
-                self.uncertainty_pub.publish(uncertainty_msg)
+            rgb   = self.rgb_image
+            depth = self.depth_image
+            stamp = self.rgb_stamp
+
+        start_time = time.time()
+        labels, _, uncertainty = self.backend.infer(rgb, depth)
+        elapsed = time.time() - start_time
+
+        self.total_time += elapsed
+        self.frame_count += 1
+        if self.frame_count % 30 == 0:
+            rospy.loginfo(f"Segmentation FPS: {self.frame_count / self.total_time:.1f}")
+
+        # Create header
+        header = Header()
+        header.stamp = stamp
+        header.frame_id = "camera_color_optical_frame"
+
+        # Publish semantic labels
+        semantic_msg = self.bridge.cv2_to_imgmsg(labels, encoding='mono8')
+        semantic_msg.header = header
+        self.semantic_pub.publish(semantic_msg)
+
+        # Publish colored visualization
+        if self.publish_color:
+            palette = (SUNRGBDColorPalette if self.esanet_dataset == 'sunrgbd'
+                       else NYUv2ColorPalette)
+            colored_msg = self.bridge.cv2_to_imgmsg(palette.colorize(labels), encoding='rgb8')
+            colored_msg.header = header
+            self.semantic_color_pub.publish(colored_msg)
+
+        # Publish uncertainty
+        if self.publish_uncertainty:
+            uncertainty_uint8 = (np.clip(uncertainty, 0.0, 1.0) * 255).astype(np.uint8)
+            uncertainty_msg = self.bridge.cv2_to_imgmsg(uncertainty_uint8, encoding='mono8')
+            uncertainty_msg.header = header
+            self.uncertainty_pub.publish(uncertainty_msg)
                 
     def run(self):
         """Run the node."""

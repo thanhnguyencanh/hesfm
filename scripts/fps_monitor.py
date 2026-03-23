@@ -8,6 +8,7 @@ Author: Thanh Nguyen Canh <thanhnc@jaist.ac.jp>
 Date: 2026
 """
 
+import os
 import rospy
 import numpy as np
 import time
@@ -78,61 +79,74 @@ class TopicMonitor:
 
 
 class SystemMonitor:
-    """Monitor system resources."""
-    
+    """Monitor system resources (Jetson-compatible)."""
+
+    # Jetson sysfs paths for GPU load (Xavier AGX / Orin)
+    _GPU_LOAD_PATHS = [
+        '/sys/devices/gpu.0/load',           # Xavier AGX (reports 0-1000)
+        '/sys/class/devfreq/17000000.gv11b/device/load',
+    ]
+    # Jetson thermal zones for GPU temperature
+    _GPU_TEMP_PATHS = [
+        '/sys/devices/virtual/thermal/thermal_zone1/temp',  # GPU zone on Xavier
+        '/sys/class/thermal/thermal_zone1/temp',
+    ]
+
     def __init__(self):
         self.has_psutil = False
-        self.has_gputil = False
-        
+
         try:
             import psutil
             self.psutil = psutil
             self.has_psutil = True
         except ImportError:
             pass
-            
-        try:
-            import GPUtil
-            self.GPUtil = GPUtil
-            self.has_gputil = True
-        except ImportError:
-            pass
-            
+
+        # Detect which sysfs path works for GPU load
+        self._gpu_load_path = None
+        for p in self._GPU_LOAD_PATHS:
+            if os.path.exists(p):
+                self._gpu_load_path = p
+                break
+
+        self._gpu_temp_path = None
+        for p in self._GPU_TEMP_PATHS:
+            if os.path.exists(p):
+                self._gpu_temp_path = p
+                break
+
     def get_cpu_usage(self):
-        """Get CPU usage percentage."""
         if self.has_psutil:
             return self.psutil.cpu_percent()
         return 0
-        
+
     def get_memory_usage(self):
-        """Get memory usage percentage."""
         if self.has_psutil:
             return self.psutil.virtual_memory().percent
         return 0
-        
+
     def get_gpu_usage(self):
-        """Get GPU usage percentage."""
-        if self.has_gputil:
-            gpus = self.GPUtil.getGPUs()
-            if gpus:
-                return gpus[0].load * 100
-        return 0
-        
-    def get_gpu_memory(self):
-        """Get GPU memory usage percentage."""
-        if self.has_gputil:
-            gpus = self.GPUtil.getGPUs()
-            if gpus:
-                return gpus[0].memoryUtil * 100
-        return 0
-        
+        """Read GPU load from Jetson sysfs (0-100%)."""
+        if self._gpu_load_path:
+            try:
+                with open(self._gpu_load_path, 'r') as f:
+                    val = int(f.read().strip())
+                # Xavier reports 0-1000 (per-mille); clamp to 0-100
+                return min(val / 10.0, 100.0)
+            except Exception:
+                pass
+        return -1  # -1 means unavailable
+
     def get_gpu_temp(self):
-        """Get GPU temperature."""
-        if self.has_gputil:
-            gpus = self.GPUtil.getGPUs()
-            if gpus:
-                return gpus[0].temperature
-        return 0
+        """Read GPU temperature from Jetson thermal sysfs (°C)."""
+        if self._gpu_temp_path:
+            try:
+                with open(self._gpu_temp_path, 'r') as f:
+                    millideg = int(f.read().strip())
+                return millideg / 1000.0
+            except Exception:
+                pass
+        return -1
 
 
 class FPSMonitorNode:
@@ -181,12 +195,16 @@ class FPSMonitorNode:
         rospy.loginfo("-" * 60)
         rospy.loginfo(f"CPU Usage: {self.system.get_cpu_usage():.1f}%")
         rospy.loginfo(f"Memory Usage: {self.system.get_memory_usage():.1f}%")
-        
+
         gpu_usage = self.system.get_gpu_usage()
-        if gpu_usage > 0:
+        if gpu_usage >= 0:
             rospy.loginfo(f"GPU Usage: {gpu_usage:.1f}%")
-            rospy.loginfo(f"GPU Memory: {self.system.get_gpu_memory():.1f}%")
-            rospy.loginfo(f"GPU Temp: {self.system.get_gpu_temp():.0f}°C")
+        else:
+            rospy.loginfo("GPU Usage: N/A (sysfs not found)")
+
+        gpu_temp = self.system.get_gpu_temp()
+        if gpu_temp >= 0:
+            rospy.loginfo(f"GPU Temp: {gpu_temp:.1f}°C")
             
     def run(self):
         """Run the node."""

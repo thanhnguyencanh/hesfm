@@ -1,23 +1,33 @@
 Panels:
   - Class: rviz/Displays
+    Help Height: 0
     Name: Displays
     Property Tree Widget:
-      Expanded: [/Global Options1, /SemanticMap1]
+      Expanded:
+        - /Global Options1
+        - /SemanticMap1
       Splitter Ratio: 0.5
-    Tree Height: 700
+    Tree Height: 419
   - Class: rviz/Selection
     Name: Selection
   - Class: rviz/Tool Properties
+    Expanded:
+      - /Interact1
     Name: Tool Properties
-    Splitter Ratio: 0.588
+    Splitter Ratio: 0.5879999995231628
   - Class: rviz/Views
+    Expanded:
+      - /Current View1
     Name: Views
     Splitter Ratio: 0.5
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: SemanticMap
-
+    SyncSource: ColorImage
+Preferences:
+  PromptSaveOnExit: true
+Toolbars:
+  toolButtonStyle: 2
 Visualization Manager:
   Class: ""
   Displays:
@@ -26,101 +36,188 @@ Visualization Manager:
       Class: rviz/Grid
       Color: 160; 160; 164
       Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
       Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
       Plane: XY
       Plane Cell Count: 40
       Reference Frame: <Fixed Frame>
       Value: true
-
     - Class: rviz/TF
       Enabled: true
+      Filter (blacklist): ""
+      Filter (whitelist): ""
       Frame Timeout: 15
       Frames:
         All Enabled: false
-        base_link: {Value: true}
-        camera_color_optical_frame: {Value: true}
-        map: {Value: true}
-        odom: {Value: true}
-      Marker Scale: 0.3
+        camera_aligned_depth_to_color_frame:
+          Value: true
+        camera_color_frame:
+          Value: true
+        camera_color_optical_frame:
+          Value: true
+        camera_depth_frame:
+          Value: true
+        camera_depth_optical_frame:
+          Value: true
+        camera_link:
+          Value: true
+      Marker Alpha: 1
+      Marker Scale: 0.30000001192092896
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: true
+      Tree:
+        camera_link:
+          camera_aligned_depth_to_color_frame:
+            camera_color_optical_frame:
+              {}
+          camera_color_frame:
+            {}
+          camera_depth_frame:
+            camera_depth_optical_frame:
+              {}
+      Update Interval: 0
       Value: true
-
     - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
       Axis: Z
       Channel Name: rgb
       Class: rviz/PointCloud2
+      Color: 255; 255; 255
       Color Transformer: RGB8
       Decay Time: 0
       Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Min Color: 0; 0; 0
       Name: SemanticMap
       Position Transformer: XYZ
       Queue Size: 1
-      Size (m): 0.05
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.05000000074505806
       Style: Flat Squares
       Topic: /semantic_map
+      Unreliable: false
+      Use Fixed Frame: true
+      Use rainbow: true
       Value: true
-
     - Class: rviz/MarkerArray
       Enabled: true
       Marker Topic: /primitives
       Name: Primitives
+      Namespaces:
+        {}
       Queue Size: 100
       Value: true
-
-    - Alpha: 0.7
+    - Alpha: 0.699999988079071
       Class: rviz/Map
       Color Scheme: costmap
       Draw Behind: false
       Enabled: true
       Name: Costmap
       Topic: /costmap
+      Unreliable: false
+      Use Timestamp: false
       Value: true
-
     - Class: rviz/Image
       Enabled: true
       Image Topic: /camera/color/image_raw
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
       Name: ColorImage
+      Normalize Range: true
       Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
       Value: true
-
     - Class: rviz/Image
       Enabled: true
       Image Topic: /semantic_segmentation_node/semantic_color
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
       Name: SemanticImage
+      Normalize Range: true
       Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
       Value: true
-
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: map
+    Default Light: true
+    Fixed Frame: camera_link
     Frame Rate: 30
   Name: root
   Tools:
     - Class: rviz/Interact
+      Hide Inactive Objects: true
     - Class: rviz/MoveCamera
     - Class: rviz/Select
     - Class: rviz/SetInitialPose
+      Theta std deviation: 0.2617993950843811
       Topic: /initialpose
+      X std deviation: 0.5
+      Y std deviation: 0.5
     - Class: rviz/SetGoal
       Topic: /move_base_simple/goal
   Value: true
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 15
-      Focal Point: {X: 0, Y: 0, Z: 0}
+      Distance: 21.85303497314453
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Field of View: 0.7853981852531433
+      Focal Point:
+        X: 3.715481758117676
+        Y: 2.5774030685424805
+        Z: -0.6851977705955505
+      Focal Shape Fixed Size: false
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
       Name: Current View
-      Pitch: 0.785
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 1.4203981161117554
       Target Frame: <Fixed Frame>
-      Yaw: 0.785
-
+      Yaw: 0.6203981637954712
+    Saved: ~
 Window Geometry:
-  Displays: {collapsed: false}
-  Height: 1000
-  Width: 1600
-  X: 100
-  Y: 100
+  ColorImage:
+    collapsed: false
+  Displays:
+    collapsed: false
+  Height: 1016
+  Hide Left Dock: false
+  Hide Right Dock: false
+  QMainWindow State: 000000ff00000000fd0000000300000000000001560000035ffc0200000003fb000000100044006900730070006c006100790073010000003d000001e0000000c900fffffffb0000001a00530065006d0061006e0074006900630049006d0061006700650100000223000000bc0000001600fffffffb000000140043006f006c006f00720049006d00610067006501000002e5000000b70000001600ffffff00000001000001060000035ffc0200000003fb0000000a00560069006500770073010000003d000001b4000000a400fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007301000001f7000000e80000005c00fffffffb0000001200530065006c0065006300740069006f006e01000002e5000000b70000005c00ffffff000000030000073800000039fc0100000001fb0000000800540069006d0065010000000000000738000003bc00ffffff000004d00000035f00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Selection:
+    collapsed: false
+  SemanticImage:
+    collapsed: false
+  Time:
+    collapsed: false
+  Tool Properties:
+    collapsed: false
+  Views:
+    collapsed: false
+  Width: 1848
+  X: 72
+  Y: 27

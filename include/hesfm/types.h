@@ -42,7 +42,11 @@ using Quaterniond = Eigen::Quaterniond;
 // =============================================================================
 
 /// Default number of semantic classes (NYUv2 40-class)
-constexpr int DEFAULT_NUM_CLASSES = 40;
+constexpr int DEFAULT_NUM_CLASSES = 37;
+
+/// Number of semantic classes for each dataset
+constexpr int NYUV2_NUM_CLASSES   = 40;
+constexpr int SUNRGBD_NUM_CLASSES = 37;
 
 /// Maximum log-odds value to prevent overflow
 constexpr double LOG_ODDS_MAX = 10.0;
@@ -53,7 +57,7 @@ constexpr double LOG_ODDS_MIN = -10.0;
 /// Small epsilon for numerical stability
 constexpr double EPSILON = 1e-10;
 
-/// NYUv2 class names
+/// NYUv2 class names (40 classes, indices 0-39, void excluded)
 const std::vector<std::string> NYUV2_CLASS_NAMES = {
     "wall", "floor", "cabinet", "bed", "chair", "sofa", "table",
     "door", "window", "bookshelf", "picture", "counter", "blinds",
@@ -65,8 +69,47 @@ const std::vector<std::string> NYUV2_CLASS_NAMES = {
     "otherprop"
 };
 
-/// Default traversable class indices (floor=1, floor_mat=19)
+/// SUN RGB-D class names (37 classes, indices 0-36, void excluded)
+/// Order matches ESANet CLASS_NAMES_ENGLISH[1:] (index 0 = void skipped)
+const std::vector<std::string> SUNRGBD_CLASS_NAMES = {
+    "wall", "floor", "cabinet", "bed", "chair", "sofa", "table",
+    "door", "window", "bookshelf", "picture", "counter", "blinds",
+    "desk", "shelves", "curtain", "dresser", "pillow", "mirror",
+    "floor_mat", "clothes", "ceiling", "books", "fridge",
+    "tv", "paper", "towel", "shower_curtain", "box",
+    "whiteboard", "person", "night_stand", "toilet", "sink",
+    "lamp", "bathtub", "bag"
+};
+
+/// NYUv2 class colors (RGB) — must match NYUv2ColorPalette.COLORS in semantic_segmentation_node.py
+const std::vector<std::array<uint8_t,3>> NYUV2_CLASS_COLORS = {
+    {128,128,128},{139,119,101},{244,164, 96},{255,182,193},{255,215,  0},
+    {220, 20, 60},{255,140,  0},{139, 69, 19},{135,206,235},{160, 82, 45},
+    {255,105,180},{  0,128,128},{210,180,140},{ 70,130,180},{188,143,143},
+    {147,112,219},{222,184,135},{255,228,225},{192,192,192},{139,119,101},
+    {128,  0,128},{245,245,245},{139, 90, 43},{173,216,230},{  0,  0,139},
+    {255,255,224},{240,255,255},{176,224,230},{210,105, 30},{255,255,255},
+    {255,  0,  0},{ 85,107, 47},{255,255,240},{176,196,222},{255,250,205},
+    {224,255,255},{ 75,  0,130},{169,169,169},{105,105,105},{128,128,  0}
+};
+
+/// SUN RGB-D class colors (RGB) — must match SUNRGBDColorPalette.COLORS in semantic_segmentation_node.py
+const std::vector<std::array<uint8_t,3>> SUNRGBD_CLASS_COLORS = {
+    {119,119,119},{244,243,131},{137, 28,157},{150,255,255},{ 54,114,113},
+    {  0,  0,176},{255, 69,  0},{ 87,112,255},{  0,163, 33},{255,150,255},
+    {255,180, 10},{101, 70, 86},{ 38,230,  0},{255,120, 70},{117, 41,121},
+    {150,255,  0},{132,  0,255},{ 24,209,255},{191,130, 35},{219,200,109},
+    {154, 62, 86},{255,190,190},{255,  0,255},{152,163, 55},{192, 79,212},
+    {230,230,230},{ 53,130, 64},{155,249,152},{ 87, 64, 34},{214,209,175},
+    {170,  0, 59},{255,  0,  0},{193,195,234},{ 70, 72,115},{255,255,  0},
+    { 52, 57,131},{ 12, 83, 45}
+};
+
+/// NYUv2 traversable class indices (floor=1, floor_mat=19)
 const std::set<int> DEFAULT_TRAVERSABLE_CLASSES = {1, 19};
+
+/// SUN RGB-D traversable class indices (floor=1, floor_mat=19)
+const std::set<int> SUNRGBD_TRAVERSABLE_CLASSES = {1, 19};
 
 // =============================================================================
 // Uncertainty Decomposition Structure

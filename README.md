@@ -166,6 +166,11 @@ sudo apt install \
     libboost-all-dev
 ```
 
+# Install vision_opencv 
+```
+git clone -b noetic https://github.com/ros-perception/vision_opencv
+```
+
 ### 4. Download Pretrained Models
 
 ```bash

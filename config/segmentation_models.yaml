@@ -22,43 +22,26 @@
 default_backend: "dformer"
 
 # -----------------------------------------------------------------------------
-# DFormer Configuration (Development - RTX 4090/4080)
+# DFormer Configuration
 # -----------------------------------------------------------------------------
 dformer:
-  # Model variant: small, base, large
-  variant: "large"
-  
-  # Pretrained weights
-  model_path: "models/dformer_large_nyuv2.pth"
-  
-  # Input configuration
+  # DFormerv2-Large pretrained on SUN RGB-D (37 classes)
+  model_path: "models/dformer_large_sunrgbd.pth"
+
+  # Input: square 480×480 (fixed by DFormerv2 architecture)
   input_height: 480
-  input_width: 640
-  
+  input_width: 480
+
+  # Dataset / class count
+  num_classes: 37
+  dataset: "sunrgbd"
+
   # Inference settings
   use_cuda: true
-  fp16: true  # Mixed precision
-  channels_last: true
-  
-  # Normalization (ImageNet)
-  mean: [0.485, 0.456, 0.406]
-  std: [0.229, 0.224, 0.225]
-  
-  # Depth normalization
-  depth_mean: 2.8
-  depth_std: 1.4
-  
-  # Architecture settings
-  num_classes: 40
-  encoder: "mit_b5"  # Mix Transformer B5
-  decoder_channels: 256
-  
-  # Performance
-  # Expected: ~80 FPS on RTX 4090, ~50 FPS on RTX 4080
-  batch_size: 1
-  
+  fp16: false   # DFormerv2 BN layers are unstable in fp16; keep fp32
+
   # Output
-  output_probabilities: true
+  output_probabilities: false
   output_uncertainty: true
 
 # -----------------------------------------------------------------------------
@@ -172,6 +155,26 @@ esanet_trt:
   
   # Output
   output_probabilities: false  # Save memory
+  output_uncertainty: true
+
+# SUN RGB-D TRT variant
+esanet_trt_sunrgbd:
+  engine_path: "models/esanet_r34_sunrgbd_fp16.engine"
+  input_height: 480
+  input_width: 640
+  precision: "fp16"
+  dataset: "sunrgbd"
+  rgb_mean: [0.485, 0.456, 0.406]
+  rgb_std: [0.229, 0.224, 0.225]
+  depth_mean: 19025.14930492213
+  depth_std:  9880.916071806689
+  num_classes: 37
+  max_workspace_size: 1073741824
+  dla_core: -1
+  async_inference: true
+  num_streams: 2
+  batch_size: 1
+  output_probabilities: false
   output_uncertainty: true
 
 # -----------------------------------------------------------------------------
