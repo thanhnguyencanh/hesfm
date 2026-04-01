@@ -7,6 +7,8 @@
  * This node subscribes to semantic point clouds and maintains
  * the semantic map using the HESFM framework.
  * 
+ * 
+ * 
  * Subscriptions:
  *   - semantic_cloud (sensor_msgs/PointCloud2): Semantic point cloud
  * 
@@ -15,7 +17,10 @@
  *   - costmap (nav_msgs/OccupancyGrid): 2D navigation costmap
  *   - primitives (visualization_msgs/MarkerArray): Gaussian primitives
  *   - uncertainty_info (hesfm/UncertaintyInfo): Uncertainty statistics
- * 
+ *   - semantic_costmap_3d (visualization_msgs/MarkerArray): 3D semantic costmap [NEW]
+ *   - semantic_costmap_2d (nav_msgs/OccupancyGrid): 2D semantic costmap [NEW]
+ *   - traversability_cloud (sensor_msgs/PointCloud2): Traversability visualization [NEW]
+ *
  * Services:
  *   - get_semantic_map (hesfm/GetSemanticMap)
  *   - query_point (hesfm/QueryPoint)
@@ -27,6 +32,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/PointField.h>
 #include <nav_msgs/OccupancyGrid.h>
+#include <nav_msgs/Odometry.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <std_srvs/Empty.h>
@@ -101,45 +107,60 @@ private:
         // Frame IDs
         pnh_.param<std::string>("map_frame", map_frame_, "map");
         pnh_.param<std::string>("sensor_frame", sensor_frame_, "camera_color_optical_frame");
-        
-        // Map parameters
-        pnh_.param("resolution", config_.map.resolution, 0.05);
-        pnh_.param("num_classes", config_.map.num_classes, 40);
-        pnh_.param("map_size_x", config_.map.size_x, 20.0);
-        pnh_.param("map_size_y", config_.map.size_y, 20.0);
-        pnh_.param("map_size_z", config_.map.size_z, 3.0);
-        pnh_.param("origin_x", config_.map.origin_x, -10.0);
-        pnh_.param("origin_y", config_.map.origin_y, -10.0);
-        pnh_.param("origin_z", config_.map.origin_z, -0.5);
-        
-        // Uncertainty weights
-        pnh_.param("w_semantic", config_.uncertainty.w_semantic, 0.4);
-        pnh_.param("w_spatial", config_.uncertainty.w_spatial, 0.2);
-        pnh_.param("w_observation", config_.uncertainty.w_observation, 0.25);
-        pnh_.param("w_temporal", config_.uncertainty.w_temporal, 0.15);
-        
-        // Gaussian primitive parameters
-        pnh_.param("target_primitives", config_.primitive.target_primitives, 128);
-        pnh_.param("min_points_per_primitive", config_.primitive.min_points_per_primitive, 5);
-        pnh_.param("conflict_threshold", config_.primitive.conflict_threshold, 0.3);
-        
-        // Kernel parameters
-        pnh_.param("length_scale_min", config_.kernel.length_scale_min, 0.1);
-        pnh_.param("length_scale_max", config_.kernel.length_scale_max, 0.5);
-        pnh_.param("uncertainty_threshold", config_.kernel.uncertainty_threshold, 0.7);
-        pnh_.param("gamma", config_.kernel.gamma, 2.0);
-        
-        // Navigation parameters
-        pnh_.param("costmap_height_min", config_.navigation.costmap_height_min, 0.0);
-        pnh_.param("costmap_height_max", config_.navigation.costmap_height_max, 0.5);
-        
-        // Processing parameters
-        pnh_.param("map_publish_rate", config_.processing.map_publish_rate, 2.0);
-        pnh_.param("costmap_publish_rate", config_.processing.costmap_publish_rate, 5.0);
-        
+
+        // Dataset for class colors
+        std::string dataset;
+        pnh_.param<std::string>("esanet_dataset", dataset, "sunrgbd");
+        class_colors_ = (dataset == "nyuv2") ? hesfm::NYUV2_CLASS_COLORS
+                                              : hesfm::SUNRGBD_CLASS_COLORS;
+
+        // Map parameters — YAML nested under "map/"
+        pnh_.param("map/resolution",   config_.map.resolution,   0.05);
+        pnh_.param("map/num_classes",  config_.map.num_classes,   37);
+        pnh_.param("map/size_x",       config_.map.size_x,       20.0);
+        pnh_.param("map/size_y",       config_.map.size_y,       20.0);
+        pnh_.param("map/size_z",       config_.map.size_z,        3.0);
+        pnh_.param("map/origin_x",     config_.map.origin_x,    -10.0);
+        pnh_.param("map/origin_y",     config_.map.origin_y,    -10.0);
+        pnh_.param("map/origin_z",     config_.map.origin_z,     -0.5);
+        // Allow flat overrides from launch args
+        pnh_.param("resolution",       config_.map.resolution,   config_.map.resolution);
+        pnh_.param("num_classes",      config_.map.num_classes,  config_.map.num_classes);
+        pnh_.param("map_size_x",       config_.map.size_x,       config_.map.size_x);
+        pnh_.param("map_size_y",       config_.map.size_y,       config_.map.size_y);
+        pnh_.param("map_size_z",       config_.map.size_z,       config_.map.size_z);
+
+        // Uncertainty weights — YAML nested under "uncertainty/"
+        pnh_.param("uncertainty/w_semantic",    config_.uncertainty.w_semantic,    0.40);
+        pnh_.param("uncertainty/w_spatial",     config_.uncertainty.w_spatial,     0.20);
+        pnh_.param("uncertainty/w_observation", config_.uncertainty.w_observation, 0.25);
+        pnh_.param("uncertainty/w_temporal",    config_.uncertainty.w_temporal,    0.15);
+
+        // Gaussian primitive parameters — YAML nested under "primitives/"
+        pnh_.param("primitives/target_primitives",        config_.primitive.target_primitives,        512);
+        pnh_.param("primitives/min_points_per_primitive", config_.primitive.min_points_per_primitive,  5);
+        pnh_.param("primitives/regularization",           config_.primitive.regularization,            0.01);
+        // High conflict_threshold keeps most primitives (low = too aggressive filtering)
+        pnh_.param("primitives/conflict_threshold",       config_.primitive.conflict_threshold,        0.9);
+
+        // Kernel parameters — YAML nested under "kernel/"
+        pnh_.param("kernel/length_scale_min",      config_.kernel.length_scale_min,      0.1);
+        pnh_.param("kernel/length_scale_max",      config_.kernel.length_scale_max,      0.5);
+        // High uncertainty_threshold keeps high-uncertainty primitives too
+        pnh_.param("kernel/uncertainty_threshold", config_.kernel.uncertainty_threshold,  0.95);
+        pnh_.param("kernel/gamma",                 config_.kernel.gamma,                  2.0);
+
+        // Navigation parameters — YAML nested under "navigation/"
+        pnh_.param("navigation/costmap_height_min", config_.navigation.costmap_height_min, 0.0);
+        pnh_.param("navigation/costmap_height_max", config_.navigation.costmap_height_max, 0.5);
+
+        // Processing parameters — YAML nested under "processing/"
+        pnh_.param("processing/map_publish_rate",     config_.processing.map_publish_rate,     2.0);
+        pnh_.param("processing/costmap_publish_rate", config_.processing.costmap_publish_rate, 5.0);
+
         // Traversable classes
-        std::vector<int> traversable_default = {1, 19};  // floor, floor_mat
-        pnh_.param("traversable_classes", traversable_classes_, traversable_default);
+        std::vector<int> traversable_default = {1, 19};  // floor, floor_mat (SUNRGBD)
+        pnh_.param("navigation/traversable_classes", traversable_classes_, traversable_default);
     }
     
     void initializeHESFM() {
@@ -386,15 +407,15 @@ private:
             pt.z = cell.position.z();
             
             int pred_class = cell.state.getPredictedClass();
-            
-            // Color by class
-            uint8_t r = static_cast<uint8_t>((pred_class * 37) % 256);
-            uint8_t g = static_cast<uint8_t>((pred_class * 91) % 256);
-            uint8_t b = static_cast<uint8_t>((pred_class * 157) % 256);
-            
-            pt.r = r;
-            pt.g = g;
-            pt.b = b;
+
+            // Color by semantic class
+            if (pred_class >= 0 && pred_class < static_cast<int>(class_colors_.size())) {
+                pt.r = class_colors_[pred_class][0];
+                pt.g = class_colors_[pred_class][1];
+                pt.b = class_colors_[pred_class][2];
+            } else {
+                pt.r = pt.g = pt.b = 128;
+            }
             
             cloud.push_back(pt);
         }
@@ -566,6 +587,7 @@ private:
     std::string map_frame_;
     std::string sensor_frame_;
     std::vector<int> traversable_classes_;
+    std::vector<std::array<uint8_t, 3>> class_colors_;
     
     // Statistics
     int total_frames_ = 0;

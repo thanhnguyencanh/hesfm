@@ -274,14 +274,21 @@ void AdaptiveKernel::getInfluenceBounds(
     Eigen::SelfAdjointEigenSolver<Matrix3d> solver(primitive.covariance);
     Vector3d eigenvalues = solver.eigenvalues();
     
-    // Maximum extent in each direction
+    // Maximum extent in each direction.
+    // Enforce minimum Euclidean influence = length_scale_min so that tight,
+    // homogeneous clusters (small covariance) still update at least a local
+    // neighbourhood of cells. Without this, extent = length_scale * sqrt(λ)
+    // falls below one cell width when λ < (resolution/length_scale_min)².
+    // Euclidean extent = length_scale * sqrt(eigenvalue).
+    // Clamp minimum to sqrt(regularization) * length_scale_min so that
+    // even heavily regularised (tight) clusters influence at least ~2 cells.
+    const double min_eucl = std::sqrt(0.01) * config_.length_scale_min;  // ~0.15m
     Vector3d extent;
     for (int i = 0; i < 3; ++i) {
-        extent(i) = length_scale * std::sqrt(std::max(eigenvalues(i), EPSILON));
+        double mahal_extent = length_scale * std::sqrt(std::max(eigenvalues(i), EPSILON));
+        extent(i) = std::max(mahal_extent, min_eucl);
     }
-    
-    // Note: This is conservative (axis-aligned bound of rotated ellipsoid)
-    // For tighter bounds, would need to consider eigenvector rotation
+
     min_bound = primitive.centroid - extent;
     max_bound = primitive.centroid + extent;
 }

@@ -539,13 +539,18 @@ class ESANetTensorRTBackend(BaseSegmentationBackend):
         def _np_to_torch_dtype(np_dtype):
             return torch.float16 if np_dtype == np.float16 else torch.float32
 
+        first_input_shape = None   # will be (N, C, H, W) from engine
+
         if use_trt8_api:
             n = self.engine.num_io_tensors
             for i in range(n):
-                name  = self.engine.get_tensor_name(i)
-                shape = abs(trt.volume(self.engine.get_tensor_shape(name)))
-                dtype = trt.nptype(self.engine.get_tensor_dtype(name))
+                name       = self.engine.get_tensor_name(i)
+                shape_full = self.engine.get_tensor_shape(name)   # e.g. (1,3,480,640)
+                shape      = abs(trt.volume(shape_full))
+                dtype      = trt.nptype(self.engine.get_tensor_dtype(name))
                 if self.engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT:
+                    if first_input_shape is None:
+                        first_input_shape = tuple(shape_full)
                     host_buf   = cuda.pagelocked_empty(shape, dtype)
                     device_buf = cuda.mem_alloc(host_buf.nbytes)
                     self.in_cpu.append(host_buf)
@@ -560,23 +565,33 @@ class ESANetTensorRTBackend(BaseSegmentationBackend):
         else:
             n_inputs = self.engine.num_bindings - 1
             for i in range(n_inputs):
-                shape = abs(trt.volume(self.engine.get_binding_shape(i)))
-                dtype = trt.nptype(self.engine.get_binding_dtype(i))
+                shape_full = self.engine.get_binding_shape(i)    # e.g. (1,3,480,640)
+                if first_input_shape is None:
+                    first_input_shape = tuple(shape_full)
+                shape      = abs(trt.volume(shape_full))
+                dtype      = trt.nptype(self.engine.get_binding_dtype(i))
                 host_buf   = cuda.pagelocked_empty(shape, dtype)
                 device_buf = cuda.mem_alloc(host_buf.nbytes)
                 self.in_cpu.append(host_buf)
                 self.in_gpu.append(device_buf)
                 self.bindings.append(int(device_buf))
             out_idx = self.engine.num_bindings - 1
-            shape = abs(trt.volume(self.engine.get_binding_shape(out_idx)))
-            dtype = trt.nptype(self.engine.get_binding_dtype(out_idx))
+            shape   = abs(trt.volume(self.engine.get_binding_shape(out_idx)))
+            dtype   = trt.nptype(self.engine.get_binding_dtype(out_idx))
             self.out_gpu_torch = torch.empty(
                 shape, dtype=_np_to_torch_dtype(dtype), device='cuda')
             self.bindings.append(int(self.out_gpu_torch.data_ptr()))
 
+        # Derive H/W from the engine's actual first-input binding (N,C,H,W)
+        # This overrides whatever was passed in config and is always correct.
+        if first_input_shape is not None and len(first_input_shape) == 4:
+            self.input_height = int(first_input_shape[2])
+            self.input_width  = int(first_input_shape[3])
+
         api_label = "TRT8+" if use_trt8_api else "TRT7"
         rospy.loginfo(f"TRT engine loaded [{api_label}]: "
-                      f"{len(self.in_cpu)} input(s)")
+                      f"{len(self.in_cpu)} input(s), "
+                      f"input shape {self.input_height}x{self.input_width}")
 
     def preprocess(self, rgb, depth=None):
         """Preprocess BGR image and depth (metres) -> FP16 CHW arrays for TRT."""

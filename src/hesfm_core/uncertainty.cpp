@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <numeric>
 #include <cmath>
+#include <ros/ros.h>
 
 namespace hesfm {
 
@@ -241,39 +242,111 @@ UncertaintyDecomposition UncertaintyDecomposer::decompose(
 void UncertaintyDecomposer::processPointCloud(
     std::vector<SemanticPoint>& points,
     const Vector3d& sensor_origin) {
-    
+
     if (points.empty()) return;
-    
-    // For each point, find neighbors and compute uncertainty
+
     const size_t num_points = points.size();
-    
-    #pragma omp parallel for schedule(dynamic)
+    const double inv_radius = 1.0 / config_.spatial_radius;
+
+    // ── Phase 0: Build voxel grid for O(N) neighbor queries ──────────────────
+    // Voxel side = spatial_radius so all neighbors within radius lie in ±1 voxel.
+    auto voxelHash = [](int ix, int iy, int iz) -> size_t {
+        size_t h = 0;
+        h ^= std::hash<int>()(ix) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(iy) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(iz) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        return h;
+    };
+
+    std::unordered_map<size_t, std::vector<int>> voxel_grid;
+    voxel_grid.reserve(num_points);
     for (size_t i = 0; i < num_points; ++i) {
-        // Find neighbors within radius
+        int ix = static_cast<int>(std::floor(points[i].position.x() * inv_radius));
+        int iy = static_cast<int>(std::floor(points[i].position.y() * inv_radius));
+        int iz = static_cast<int>(std::floor(points[i].position.z() * inv_radius));
+        voxel_grid[voxelHash(ix, iy, iz)].push_back(static_cast<int>(i));
+    }
+
+    // ── Phase 1 (parallel): U_sem, U_spa, U_obs — no mutex ──────────────────
+    struct PartialResult { double u_sem, u_spa, u_obs; };
+    std::vector<PartialResult> partial(num_points);
+
+    #pragma omp parallel for schedule(dynamic, 64)
+    for (size_t i = 0; i < num_points; ++i) {
+        const SemanticPoint& pt = points[i];
+
+        // Semantic uncertainty (use pre-computed value from segmentation if valid)
+        double u_sem;
+        if (pt.uncertainty_semantic >= 0.0 && pt.uncertainty_semantic <= 1.0) {
+            u_sem = pt.uncertainty_semantic;
+        } else if (!pt.evidence.empty()) {
+            u_sem = computeSemanticUncertainty(pt.evidence,
+                                               static_cast<int>(pt.evidence.size()));
+        } else if (!pt.class_probabilities.empty()) {
+            u_sem = computeSemanticUncertaintyFromProbs(pt.class_probabilities);
+        } else {
+            u_sem = 1.0;
+        }
+
+        // Spatial uncertainty via voxel grid
+        int ix = static_cast<int>(std::floor(pt.position.x() * inv_radius));
+        int iy = static_cast<int>(std::floor(pt.position.y() * inv_radius));
+        int iz = static_cast<int>(std::floor(pt.position.z() * inv_radius));
+
         std::vector<SemanticPoint> neighbors;
-        neighbors.reserve(50);
-        
-        for (size_t j = 0; j < num_points; ++j) {
-            if (i == j) continue;
-            
-            double dist = (points[i].position - points[j].position).norm();
-            if (dist < config_.spatial_radius) {
-                neighbors.push_back(points[j]);
+        neighbors.reserve(32);
+        for (int dx = -1; dx <= 1; ++dx) {
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dz = -1; dz <= 1; ++dz) {
+                    auto it = voxel_grid.find(voxelHash(ix+dx, iy+dy, iz+dz));
+                    if (it == voxel_grid.end()) continue;
+                    for (int j : it->second) {
+                        if (j == static_cast<int>(i)) continue;
+                        if ((pt.position - points[j].position).norm()
+                                < config_.spatial_radius) {
+                            neighbors.push_back(points[j]);
+                        }
+                    }
+                }
             }
         }
-        
-        // Compute local density
-        double local_density = static_cast<double>(neighbors.size());
-        
-        // Decompose uncertainty
-        auto decomp = decompose(points[i], neighbors, sensor_origin);
-        
-        // Update point
-        points[i].uncertainty_semantic = decomp.semantic;
-        points[i].uncertainty_spatial = decomp.spatial;
-        points[i].uncertainty_observation = decomp.observation;
-        points[i].uncertainty_temporal = decomp.temporal;
-        points[i].uncertainty_total = decomp.total;
+
+        double u_spa = computeSpatialUncertainty(pt, neighbors);
+        double u_obs = computeObservationUncertainty(pt.position, sensor_origin);
+
+        partial[i] = {u_sem, u_spa, u_obs};
+    }
+
+    // ── Phase 2 (sequential): U_temp + total write-back ──────────────────────
+    // computeTemporalUncertainty() updates shared state — keep sequential.
+    double sum_sem = 0, sum_spa = 0, sum_obs = 0, sum_temp = 0, sum_total = 0;
+
+    for (size_t i = 0; i < num_points; ++i) {
+        double u_temp = computeTemporalUncertainty(points[i].position,
+                                                    points[i].semantic_class);
+        double u_total = computeTotalUncertainty(partial[i].u_sem, partial[i].u_spa,
+                                                  partial[i].u_obs, u_temp);
+
+        points[i].uncertainty_semantic    = partial[i].u_sem;
+        points[i].uncertainty_spatial     = partial[i].u_spa;
+        points[i].uncertainty_observation = partial[i].u_obs;
+        points[i].uncertainty_temporal    = u_temp;
+        points[i].uncertainty_total       = u_total;
+
+        sum_sem   += partial[i].u_sem;
+        sum_spa   += partial[i].u_spa;
+        sum_obs   += partial[i].u_obs;
+        sum_temp  += u_temp;
+        sum_total += u_total;
+    }
+
+    // ── Diagnostics: log per-component means every 30 clouds ─────────────────
+    static int call_count = 0;
+    if (++call_count % 30 == 1) {
+        double n = static_cast<double>(num_points);
+        ROS_INFO("[Uncertainty] n=%zu  sem=%.3f  spa=%.3f  obs=%.3f  temp=%.3f  total=%.3f",
+                 num_points,
+                 sum_sem/n, sum_spa/n, sum_obs/n, sum_temp/n, sum_total/n);
     }
 }
 

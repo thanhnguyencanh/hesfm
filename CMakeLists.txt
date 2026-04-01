@@ -204,6 +204,40 @@ target_link_libraries(hesfm_core
   yaml-cpp
 )
 
+## Costmap Node (2D)
+add_executable(costmap_node
+  src/nodes/costmap_node.cpp
+)
+ 
+add_dependencies(costmap_node
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+ 
+target_link_libraries(costmap_node
+  hesfm_core
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+)
+ 
+## ==========================================================================
+## 3D Semantic Costmap Node 
+## ==========================================================================
+ 
+add_executable(semantic_costmap_3d_node
+  src/nodes/semantic_costmap_3d_node.cpp
+)
+ 
+add_dependencies(semantic_costmap_3d_node
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+ 
+target_link_libraries(semantic_costmap_3d_node
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+)
+
 ## ==========================================================================
 ## ROS Nodes
 ## ==========================================================================
@@ -225,6 +259,26 @@ target_link_libraries(hesfm_mapper_node
   ${PCL_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )
+
+## ==========================================================================
+## Exploration Node (optional-not done)
+## ==========================================================================
+ 
+add_executable(exploration_node
+  src/nodes/exploration_node.cpp
+)
+ 
+add_dependencies(exploration_node
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+ 
+target_link_libraries(exploration_node
+  hesfm_core
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+)
+
 
 ## Semantic Cloud Node
 add_executable(semantic_cloud_node
