@@ -112,6 +112,317 @@ const std::set<int> DEFAULT_TRAVERSABLE_CLASSES = {1, 19};
 const std::set<int> SUNRGBD_TRAVERSABLE_CLASSES = {1, 19};
 
 // =============================================================================
+// Affordance Types
+// =============================================================================
+
+/**
+ * @brief Affordance categories for semantic classes
+ *
+ * Each semantic class maps to a set of affordances describing what
+ * actions the robot can perform at/with that region.
+ */
+enum class AffordanceType : uint8_t {
+    TRAVERSABLE   = 0,  ///< Robot can drive over this surface
+    PLACEABLE     = 1,  ///< Robot can place objects on this surface
+    OPENABLE      = 2,  ///< Robot can open this (door, drawer, fridge)
+    SITTABLE      = 3,  ///< Object supports sitting (chair, sofa, bed)
+    SUPPORTIVE    = 4,  ///< Structural support (wall, ceiling, column)
+    CONTAINABLE   = 5,  ///< Can contain/store objects (cabinet, shelf, box)
+    MANIPULABLE   = 6,  ///< Robot can pick up / move (bag, box, books, clothes)
+    VIEWABLE      = 7,  ///< Information source (tv, whiteboard, picture, mirror)
+    AVOIDABLE     = 8,  ///< Dynamic/dangerous, must avoid (person)
+    NUM_AFFORDANCES = 9
+};
+
+/// Number of affordance types
+constexpr int NUM_AFFORDANCE_TYPES = static_cast<int>(AffordanceType::NUM_AFFORDANCES);
+
+/**
+ * @brief Static lookup table: semantic class index -> bitset of affordances
+ *
+ * SUN RGB-D 37-class mapping. Each entry is a vector of AffordanceType values
+ * that apply to that class. The index matches SUNRGBD_CLASS_NAMES.
+ */
+inline std::vector<std::vector<AffordanceType>> getDefaultAffordanceTable() {
+    std::vector<std::vector<AffordanceType>> table(SUNRGBD_NUM_CLASSES);
+    // 0: wall           -> SUPPORTIVE
+    table[0]  = {AffordanceType::SUPPORTIVE};
+    // 1: floor          -> TRAVERSABLE
+    table[1]  = {AffordanceType::TRAVERSABLE};
+    // 2: cabinet        -> CONTAINABLE, OPENABLE
+    table[2]  = {AffordanceType::CONTAINABLE, AffordanceType::OPENABLE};
+    // 3: bed            -> SITTABLE, PLACEABLE
+    table[3]  = {AffordanceType::SITTABLE, AffordanceType::PLACEABLE};
+    // 4: chair          -> SITTABLE
+    table[4]  = {AffordanceType::SITTABLE};
+    // 5: sofa           -> SITTABLE
+    table[5]  = {AffordanceType::SITTABLE};
+    // 6: table          -> PLACEABLE
+    table[6]  = {AffordanceType::PLACEABLE};
+    // 7: door           -> OPENABLE
+    table[7]  = {AffordanceType::OPENABLE};
+    // 8: window         -> SUPPORTIVE
+    table[8]  = {AffordanceType::SUPPORTIVE};
+    // 9: bookshelf      -> CONTAINABLE
+    table[9]  = {AffordanceType::CONTAINABLE};
+    // 10: picture       -> VIEWABLE
+    table[10] = {AffordanceType::VIEWABLE};
+    // 11: counter       -> PLACEABLE
+    table[11] = {AffordanceType::PLACEABLE};
+    // 12: blinds        -> (none)
+    table[12] = {};
+    // 13: desk          -> PLACEABLE
+    table[13] = {AffordanceType::PLACEABLE};
+    // 14: shelves       -> CONTAINABLE
+    table[14] = {AffordanceType::CONTAINABLE};
+    // 15: curtain       -> (none)
+    table[15] = {};
+    // 16: dresser       -> CONTAINABLE, OPENABLE, PLACEABLE
+    table[16] = {AffordanceType::CONTAINABLE, AffordanceType::OPENABLE, AffordanceType::PLACEABLE};
+    // 17: pillow        -> MANIPULABLE
+    table[17] = {AffordanceType::MANIPULABLE};
+    // 18: mirror        -> VIEWABLE
+    table[18] = {AffordanceType::VIEWABLE};
+    // 19: floor_mat     -> TRAVERSABLE
+    table[19] = {AffordanceType::TRAVERSABLE};
+    // 20: clothes       -> MANIPULABLE
+    table[20] = {AffordanceType::MANIPULABLE};
+    // 21: ceiling       -> SUPPORTIVE
+    table[21] = {AffordanceType::SUPPORTIVE};
+    // 22: books         -> MANIPULABLE
+    table[22] = {AffordanceType::MANIPULABLE};
+    // 23: fridge        -> CONTAINABLE, OPENABLE
+    table[23] = {AffordanceType::CONTAINABLE, AffordanceType::OPENABLE};
+    // 24: tv            -> VIEWABLE
+    table[24] = {AffordanceType::VIEWABLE};
+    // 25: paper         -> MANIPULABLE
+    table[25] = {AffordanceType::MANIPULABLE};
+    // 26: towel         -> MANIPULABLE
+    table[26] = {AffordanceType::MANIPULABLE};
+    // 27: shower_curtain -> (none)
+    table[27] = {};
+    // 28: box           -> CONTAINABLE, MANIPULABLE
+    table[28] = {AffordanceType::CONTAINABLE, AffordanceType::MANIPULABLE};
+    // 29: whiteboard    -> VIEWABLE
+    table[29] = {AffordanceType::VIEWABLE};
+    // 30: person        -> AVOIDABLE
+    table[30] = {AffordanceType::AVOIDABLE};
+    // 31: night_stand   -> PLACEABLE, CONTAINABLE
+    table[31] = {AffordanceType::PLACEABLE, AffordanceType::CONTAINABLE};
+    // 32: toilet        -> (none)
+    table[32] = {};
+    // 33: sink          -> (none)
+    table[33] = {};
+    // 34: lamp          -> (none)
+    table[34] = {};
+    // 35: bathtub       -> CONTAINABLE
+    table[35] = {AffordanceType::CONTAINABLE};
+    // 36: bag           -> CONTAINABLE, MANIPULABLE
+    table[36] = {AffordanceType::CONTAINABLE, AffordanceType::MANIPULABLE};
+    return table;
+}
+
+/// Human-readable affordance names
+inline const char* affordanceTypeName(AffordanceType t) {
+    switch (t) {
+        case AffordanceType::TRAVERSABLE:  return "traversable";
+        case AffordanceType::PLACEABLE:    return "placeable";
+        case AffordanceType::OPENABLE:     return "openable";
+        case AffordanceType::SITTABLE:     return "sittable";
+        case AffordanceType::SUPPORTIVE:   return "supportive";
+        case AffordanceType::CONTAINABLE:  return "containable";
+        case AffordanceType::MANIPULABLE:  return "manipulable";
+        case AffordanceType::VIEWABLE:     return "viewable";
+        case AffordanceType::AVOIDABLE:    return "avoidable";
+        default:                           return "unknown";
+    }
+}
+
+// =============================================================================
+// Dynamic Object Status
+// =============================================================================
+
+/**
+ * @brief Tracks dynamic status of a map cell over time
+ *
+ * Uses a sliding-window approach: stores the last N predicted classes
+ * and timestamps to detect changes (dynamic objects) versus stable regions.
+ */
+struct DynamicObjectStatus {
+    /// Has the cell's dominant class changed recently?
+    bool is_dynamic = false;
+
+    /// Number of class transitions detected in the observation window
+    int transition_count = 0;
+
+    /// Previous dominant class (for change detection)
+    int previous_class = -1;
+
+    /// Timestamp when the class last changed
+    double last_transition_time = 0.0;
+
+    /// Occupancy confidence: exponential moving average of occupancy observations
+    /// 1.0 = always occupied, 0.0 = never occupied
+    double occupancy_confidence = 0.0;
+
+    /// Number of frames this cell was observed
+    int observation_frames = 0;
+
+    /// Number of frames this cell was occupied
+    int occupied_frames = 0;
+
+    // -------------------------------------------------------------------------
+    // Methods
+    // -------------------------------------------------------------------------
+
+    /**
+     * @brief Update dynamic status with a new observation
+     * @param current_class   Predicted class from this frame
+     * @param current_time    Current timestamp
+     * @param transition_window  Time window for counting transitions (seconds)
+     * @param ema_alpha       Exponential moving average smoothing factor
+     */
+    void update(int current_class, double current_time,
+                double transition_window = 10.0, double ema_alpha = 0.1) {
+
+        observation_frames++;
+
+        // Detect class transition
+        if (previous_class >= 0 && current_class != previous_class) {
+            // Only count as transition if within the window
+            if (current_time - last_transition_time < transition_window) {
+                transition_count++;
+            }
+            last_transition_time = current_time;
+        }
+
+        // Mark dynamic if enough transitions observed
+        // Threshold: 2+ transitions within the window
+        is_dynamic = (transition_count >= 2);
+
+        // Update occupancy confidence via EMA
+        double occupied = (current_class >= 0) ? 1.0 : 0.0;
+        occupancy_confidence = ema_alpha * occupied
+                             + (1.0 - ema_alpha) * occupancy_confidence;
+
+        previous_class = current_class;
+    }
+
+    /**
+     * @brief Decay transition count over time (call periodically)
+     */
+    void decayTransitions(double current_time, double transition_window = 10.0) {
+        if (current_time - last_transition_time > transition_window) {
+            transition_count = std::max(0, transition_count - 1);
+            if (transition_count < 2) {
+                is_dynamic = false;
+            }
+        }
+    }
+
+    /**
+     * @brief Reset dynamic status
+     */
+    void reset() {
+        is_dynamic = false;
+        transition_count = 0;
+        previous_class = -1;
+        last_transition_time = 0.0;
+        occupancy_confidence = 0.0;
+        observation_frames = 0;
+        occupied_frames = 0;
+    }
+};
+
+// =============================================================================
+// Reachability Information
+// =============================================================================
+
+/**
+ * @brief Reachability state for a map cell
+ *
+ * Tracks whether a cell is reachable by the robot, considering traversability
+ * of surrounding cells and geometric constraints. Reachability influences the
+ * adaptive kernel gating: unreachable areas receive lower update weight.
+ */
+struct ReachabilityInfo {
+    /// Is this cell reachable from the robot's current position?
+    bool is_reachable = false;
+
+    /// Reachability probability [0, 1] — 1.0 = certainly reachable
+    double probability = 0.5;
+
+    /// Shortest traversable distance from robot (meters); INF if unreachable
+    double distance = std::numeric_limits<double>::infinity();
+
+    /// Timestamp of last reachability evaluation
+    double last_evaluated = 0.0;
+
+    /// Number of times this cell was evaluated as reachable
+    int reachable_count = 0;
+
+    /// Total number of reachability evaluations
+    int evaluation_count = 0;
+
+    void update(bool reachable, double dist, double current_time) {
+        evaluation_count++;
+        if (reachable) {
+            reachable_count++;
+            distance = std::min(distance, dist);
+        }
+        probability = static_cast<double>(reachable_count) / evaluation_count;
+        is_reachable = (probability > 0.5);
+        last_evaluated = current_time;
+    }
+
+    void reset() {
+        is_reachable = false;
+        probability = 0.5;
+        distance = std::numeric_limits<double>::infinity();
+        last_evaluated = 0.0;
+        reachable_count = 0;
+        evaluation_count = 0;
+    }
+};
+
+// =============================================================================
+// Affordance Bitset
+// =============================================================================
+
+/**
+ * @brief Compact bitset encoding active affordances for a map cell.
+ *
+ * Packed into a uint16_t for memory efficiency (one bit per AffordanceType).
+ */
+struct AffordanceBitset {
+    uint16_t bits = 0;
+
+    bool has(AffordanceType t) const { return (bits >> static_cast<uint8_t>(t)) & 1; }
+    void set(AffordanceType t)       { bits |= (1 << static_cast<uint8_t>(t)); }
+    void clear(AffordanceType t)     { bits &= ~(1 << static_cast<uint8_t>(t)); }
+    void clearAll()                  { bits = 0; }
+
+    /// Populate from semantic class using the default affordance table
+    void fromSemanticClass(int cls) {
+        clearAll();
+        auto table = getDefaultAffordanceTable();
+        if (cls >= 0 && cls < static_cast<int>(table.size())) {
+            for (auto aff : table[cls]) {
+                set(aff);
+            }
+        }
+    }
+
+    /// Count number of active affordances
+    int count() const {
+        int c = 0;
+        for (int i = 0; i < NUM_AFFORDANCE_TYPES; ++i)
+            c += (bits >> i) & 1;
+        return c;
+    }
+};
+
+// =============================================================================
 // Uncertainty Decomposition Structure
 // =============================================================================
 
@@ -485,29 +796,34 @@ struct SemanticState {
 struct MapCell {
     /// Grid indices
     int ix = 0, iy = 0, iz = 0;
-    
+
     /// Center position in world frame
     Vector3d position = Vector3d::Zero();
-    
+
     /// Semantic state
     SemanticState state;
-    
+
     /// Navigation cost [-1=unknown, 0=free, 100=lethal]
     int8_t nav_cost = -1;
-    
+
+    /// Extended functional attributes (HESFM innovation #4)
+    DynamicObjectStatus dynamic_status;
+    ReachabilityInfo reachability;
+    AffordanceBitset affordances;
+
     // -------------------------------------------------------------------------
     // Constructors
     // -------------------------------------------------------------------------
-    
+
     MapCell(int num_classes = DEFAULT_NUM_CLASSES) : state(num_classes) {}
-    
+
     MapCell(int x, int y, int z, int num_classes = DEFAULT_NUM_CLASSES)
         : ix(x), iy(y), iz(z), state(num_classes) {}
-    
+
     // -------------------------------------------------------------------------
     // Methods
     // -------------------------------------------------------------------------
-    
+
     /**
      * @brief Check if cell is traversable
      */
@@ -516,7 +832,7 @@ struct MapCell {
         int pred_class = state.getPredictedClass();
         return traversable_classes.count(pred_class) > 0;
     }
-    
+
     /**
      * @brief Check if cell is an obstacle
      */
@@ -524,7 +840,18 @@ struct MapCell {
         if (!state.isObserved()) return false;
         return state.getConfidence() >= confidence_threshold && nav_cost == 100;
     }
-    
+
+    /**
+     * @brief Update extended functional attributes from current semantic state
+     */
+    void updateFunctionalAttributes(double current_time) {
+        int pred_class = state.getPredictedClass();
+        // Update dynamic status
+        dynamic_status.update(pred_class, current_time);
+        // Update affordance bitset from predicted class
+        affordances.fromSemanticClass(pred_class);
+    }
+
     /**
      * @brief Get hash key for map storage
      */

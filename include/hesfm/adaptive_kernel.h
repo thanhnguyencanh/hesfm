@@ -196,7 +196,25 @@ public:
      * @return Adaptive length scale
      */
     double computeAdaptiveLengthScale(const Matrix3d& covariance, double max_trace) const;
-    
+
+    /**
+     * @brief Compute uncertainty-adaptive length scale (EvSemMap-inspired)
+     *
+     * Extends base geometric length scale with uncertainty-driven expansion:
+     * l_adaptive = l_base * exp(1 + b * uncertainty)
+     *
+     * High-uncertainty regions get larger kernels so nearby certain
+     * observations can propagate further, while low-uncertainty regions
+     * keep tight, precise kernels.
+     *
+     * @param covariance Covariance matrix
+     * @param max_trace Maximum trace for normalization
+     * @param uncertainty Primitive uncertainty [0, 1]
+     * @return Adaptive length scale
+     */
+    double computeUncertaintyAdaptiveLengthScale(
+        const Matrix3d& covariance, double max_trace, double uncertainty) const;
+
     /**
      * @brief Compute length scales for all primitives
      */

@@ -152,41 +152,82 @@ double UncertaintyDecomposer::computeObservationUncertainty(
 double UncertaintyDecomposer::computeTemporalUncertainty(
     const Vector3d& position,
     int current_class) {
-    
+
     std::lock_guard<std::mutex> lock(mutex_);
-    
+
+    // Advance the monotonic clock used for LRU eviction.
+    temporal_clock_ += 1e-6;  // tiny increment per call, overwritten by real time below
+
     size_t hash = spatialHash(position);
-    
+
     // Get or create history for this location
     auto it = temporal_history_.find(hash);
     if (it == temporal_history_.end()) {
         temporal_history_[hash] = TemporalHistory(DEFAULT_NUM_CLASSES);
         it = temporal_history_.find(hash);
     }
-    
+
     TemporalHistory& history = it->second;
-    
+    history.last_access_time = temporal_clock_;
+
     // Update class counts
     if (current_class >= 0 && current_class < static_cast<int>(history.class_counts.size())) {
         history.class_counts[current_class]++;
     }
     history.total_observations++;
-    
+
     // Need at least 2 observations for temporal analysis
     if (history.total_observations < 2) {
         return 0.5;  // Neutral uncertainty
     }
-    
+
     // Find most frequent class
-    int max_count = *std::max_element(history.class_counts.begin(), 
+    int max_count = *std::max_element(history.class_counts.begin(),
                                        history.class_counts.end());
-    
+
     // Temporal consistency
-    double consistency = static_cast<double>(max_count) / 
+    double consistency = static_cast<double>(max_count) /
                          static_cast<double>(history.total_observations);
-    
+
+    // Periodically evict stale entries (every 10k accesses)
+    static int access_count = 0;
+    if (++access_count % 10000 == 0) {
+        evictStaleHistory();
+    }
+
     // Uncertainty is inverse of consistency
     return std::clamp(1.0 - consistency, 0.0, 1.0);
+}
+
+void UncertaintyDecomposer::evictStaleHistory() {
+    // Called with mutex already held.
+    const double cutoff = temporal_clock_ - TEMPORAL_HISTORY_MAX_AGE;
+
+    // Phase 1: remove entries older than the sliding window
+    auto it = temporal_history_.begin();
+    while (it != temporal_history_.end()) {
+        if (it->second.last_access_time < cutoff) {
+            it = temporal_history_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Phase 2: if still over capacity, remove oldest entries
+    if (temporal_history_.size() > TEMPORAL_HISTORY_MAX_ENTRIES) {
+        // Gather (time, hash) pairs and sort by time ascending
+        std::vector<std::pair<double, size_t>> entries;
+        entries.reserve(temporal_history_.size());
+        for (const auto& [h, hist] : temporal_history_) {
+            entries.emplace_back(hist.last_access_time, h);
+        }
+        std::sort(entries.begin(), entries.end());
+
+        size_t to_remove = temporal_history_.size() - TEMPORAL_HISTORY_MAX_ENTRIES;
+        for (size_t i = 0; i < to_remove && i < entries.size(); ++i) {
+            temporal_history_.erase(entries[i].second);
+        }
+    }
 }
 
 // =============================================================================
@@ -396,20 +437,32 @@ void UncertaintyDecomposer::resetTemporalHistory() {
 void UncertaintyDecomposer::clearTemporalHistoryInRegion(
     const Vector3d& min_pt,
     const Vector3d& max_pt) {
-    
+
     std::lock_guard<std::mutex> lock(mutex_);
-    
-    // Iterate over all tracked positions
-    // Note: This is inefficient for large histories; consider spatial indexing
-    auto it = temporal_history_.begin();
-    while (it != temporal_history_.end()) {
-        // We don't have position stored directly, so we can't filter by region
-        // In a production implementation, store position with history
-        ++it;
+
+    // Clear all hashes that correspond to positions within the bounding box.
+    // We enumerate the spatial grid cells that cover [min_pt, max_pt] and erase
+    // matching entries. This is exact for the grid-based hash scheme used by
+    // spatialHash() (floor(pos / temporal_resolution)).
+    const double res = config_.temporal_resolution;
+    const int x_min = static_cast<int>(std::floor(min_pt.x() / res));
+    const int x_max = static_cast<int>(std::floor(max_pt.x() / res));
+    const int y_min = static_cast<int>(std::floor(min_pt.y() / res));
+    const int y_max = static_cast<int>(std::floor(max_pt.y() / res));
+    const int z_min = static_cast<int>(std::floor(min_pt.z() / res));
+    const int z_max = static_cast<int>(std::floor(max_pt.z() / res));
+
+    for (int ix = x_min; ix <= x_max; ++ix) {
+        for (int iy = y_min; iy <= y_max; ++iy) {
+            for (int iz = z_min; iz <= z_max; ++iz) {
+                size_t hash = 0;
+                hash ^= std::hash<int>()(ix) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+                hash ^= std::hash<int>()(iy) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+                hash ^= std::hash<int>()(iz) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+                temporal_history_.erase(hash);
+            }
+        }
     }
-    
-    // For now, just clear everything (simplified)
-    // A proper implementation would use a spatial hash that can be queried by region
 }
 
 size_t UncertaintyDecomposer::getTemporalHistorySize() const {

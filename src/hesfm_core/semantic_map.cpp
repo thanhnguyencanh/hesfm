@@ -106,10 +106,27 @@ void SemanticMap::update(const std::vector<GaussianPrimitive>& primitives,
                     
                     cell.state.observation_count++;
                     cell.state.last_update_time = prim.timestamp;
-                    
-                    // Update navigation cost
+
+                    // --- Extended functional attributes (HESFM innovation #4) ---
                     int pred_class = cell.state.getPredictedClass();
-                    if (traversable_classes_.count(pred_class) > 0) {
+
+                    // Update dynamic object status
+                    cell.dynamic_status.update(pred_class, prim.timestamp);
+                    cell.state.is_dynamic = cell.dynamic_status.is_dynamic;
+
+                    // Update affordances from predicted class
+                    cell.affordances.fromSemanticClass(pred_class);
+
+                    // Propagate reachability from primitive
+                    cell.state.reachability = std::max(
+                        cell.state.reachability, prim.reachability);
+
+                    // Update navigation cost incorporating affordances
+                    if (cell.affordances.has(AffordanceType::TRAVERSABLE)) {
+                        cell.nav_cost = 0;  // Free
+                    } else if (cell.affordances.has(AffordanceType::AVOIDABLE)) {
+                        cell.nav_cost = 100;  // Dynamic obstacle — always lethal
+                    } else if (traversable_classes_.count(pred_class) > 0) {
                         cell.nav_cost = 0;  // Free
                     } else if (cell.state.getConfidence() > 0.5) {
                         cell.nav_cost = 100;  // Obstacle
@@ -120,6 +137,33 @@ void SemanticMap::update(const std::vector<GaussianPrimitive>& primitives,
     }
     
     total_observations_ += primitives.size();
+
+    // Enforce max_cells limit — prune lowest-confidence cells when exceeded
+    if (config_.max_cells > 0 &&
+        cells_.size() > static_cast<size_t>(config_.max_cells)) {
+        // Find the confidence value at the pruning boundary
+        std::vector<double> confidences;
+        confidences.reserve(cells_.size());
+        for (const auto& [h, c] : cells_) {
+            confidences.push_back(c.state.getConfidence());
+        }
+        size_t excess = cells_.size() - config_.max_cells;
+        std::nth_element(confidences.begin(),
+                         confidences.begin() + static_cast<long>(excess),
+                         confidences.end());
+        double cutoff = confidences[excess];
+
+        auto it = cells_.begin();
+        size_t removed = 0;
+        while (it != cells_.end() && removed < excess) {
+            if (it->second.state.getConfidence() < cutoff) {
+                it = cells_.erase(it);
+                ++removed;
+            } else {
+                ++it;
+            }
+        }
+    }
 }
 
 void SemanticMap::updateCell(const Vector3d& position,

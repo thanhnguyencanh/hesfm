@@ -436,12 +436,23 @@ std::vector<int> GaussianPrimitiveBuilder::uncertaintyWeightedKMeans(
         for (int c = 0; c < k; ++c) {
             if (total_weights[c] > EPSILON) {
                 new_centroids[c] /= total_weights[c];
-                max_shift = std::max(max_shift, 
+                max_shift = std::max(max_shift,
                                     (new_centroids[c] - centroids[c]).norm());
                 centroids[c] = new_centroids[c];
+            } else {
+                // Empty cluster: re-seed from the point furthest from its
+                // assigned centroid (highest quantization error).
+                double best_d = 0.0;
+                size_t best_i = 0;
+                for (size_t i = 0; i < points.size(); ++i) {
+                    double d = (points[i].position - centroids[assignments[i]]).squaredNorm();
+                    if (d > best_d) { best_d = d; best_i = i; }
+                }
+                centroids[c] = points[best_i].position;
+                max_shift = std::numeric_limits<double>::max(); // force re-assign
             }
         }
-        
+
         // Check convergence
         if (max_shift < config_.kmeans_tolerance) {
             break;

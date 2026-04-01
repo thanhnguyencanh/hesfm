@@ -251,11 +251,28 @@ private:
     struct TemporalHistory {
         std::vector<int> class_counts;
         int total_observations = 0;
-        
+        double last_access_time = 0.0;   ///< For sliding-window eviction
+
         TemporalHistory(int num_classes = DEFAULT_NUM_CLASSES)
             : class_counts(num_classes, 0) {}
     };
     std::unordered_map<size_t, TemporalHistory> temporal_history_;
+
+    /// Maximum age (seconds) before a temporal history entry expires.
+    static constexpr double TEMPORAL_HISTORY_MAX_AGE = 30.0;
+    /// Maximum number of entries before forced eviction.
+    static constexpr size_t TEMPORAL_HISTORY_MAX_ENTRIES = 500000;
+    /// Clock used to stamp temporal history accesses.
+    double temporal_clock_ = 0.0;
+
+    /**
+     * @brief Evict stale entries from temporal_history_ (call periodically).
+     *
+     * Removes entries older than TEMPORAL_HISTORY_MAX_AGE and, if the map
+     * is still above TEMPORAL_HISTORY_MAX_ENTRIES, removes the oldest
+     * entries until the limit is met.
+     */
+    void evictStaleHistory();
     
     /// Mutex for thread safety
     mutable std::mutex mutex_;

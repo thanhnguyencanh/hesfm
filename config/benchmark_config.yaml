@@ -1,0 +1,43 @@
+# =============================================================================
+# HESFM Benchmark Configuration
+# =============================================================================
+# Usage: python3 scripts/evaluate_mapping.py --config config/benchmark_config.yaml
+#
+# Each entry in `methods` points to a directory (2d mode) or file (3d mode)
+# containing that method's predictions.
+
+# Global settings
+num_classes: 37          # 37 for SUN RGB-D, 40 for NYUv2
+resolution: 0.05         # metres (for 3d map evaluation)
+ground_truth_dir: "data/sunrgbd/gt_labels/"   # Adjust to your dataset path
+
+# Methods to compare
+methods:
+  - name: "HESFM (Ours)"
+    predictions: "results/hesfm/"
+    mode: "2d"
+    compression_ratio: 25.0    # points / primitives
+    mean_latency_ms: 45.0
+
+  - name: "SEE-CSOM"
+    predictions: "results/see_csom/"
+    mode: "2d"
+    compression_ratio: 1.0     # No compression (block-level)
+    mean_latency_ms: 60.0
+
+  - name: "EvSemMap-EBS"
+    predictions: "results/evsemmap_ebs/"
+    mode: "2d"
+    compression_ratio: 1.0
+    mean_latency_ms: 55.0
+
+  - name: "S-BKI (Baseline)"
+    predictions: "results/sbki/"
+    mode: "2d"
+    compression_ratio: 1.0
+    mean_latency_ms: 50.0
+
+# Output settings
+output_dir: "eval_results/"
+generate_plots: true
+per_class_report: true

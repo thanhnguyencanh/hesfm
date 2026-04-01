@@ -28,30 +28,35 @@ AdaptiveKernel::AdaptiveKernel(const KernelConfig& config)
 double AdaptiveKernel::compute(const Vector3d& query_point,
                                 const GaussianPrimitive& primitive,
                                 double max_trace) const {
-    
+
     // Binary filter: reject high uncertainty primitives
     if (filterFunction(primitive.uncertainty) < 0.5) {
         return 0.0;
     }
-    
-    // Compute adaptive length scale
-    double length_scale = computeAdaptiveLengthScale(primitive.covariance, max_trace);
-    
-    // Geometric kernel
+
+    // Compute uncertainty-adaptive length scale (HESFM innovation #3)
+    // Adapts shape based on local geometry AND reliability
+    double length_scale = computeUncertaintyAdaptiveLengthScale(
+        primitive.covariance, max_trace, primitive.uncertainty);
+
+    // Geometric kernel (Wendland C2 with Mahalanobis distance)
     double k_geo = geometricKernel(query_point, primitive, length_scale);
     if (k_geo < EPSILON) {
         return 0.0;
     }
-    
+
     // Uncertainty gating
     double k_unc = uncertaintyKernel(primitive.uncertainty);
-    
+
     // Reachability kernel
     double distance = (query_point - primitive.centroid).norm();
     double k_reach = reachabilityKernel(primitive.semantic_class, distance);
-    
-    // Combined kernel
-    return k_geo * k_unc * k_reach;
+
+    // Dynamic object attenuation: reduce influence for dynamic primitives
+    double k_dyn = primitive.is_dynamic ? 0.5 : 1.0;
+
+    // Combined kernel: k̃ = k_geo · k_unc · k_reach · k_dyn
+    return k_geo * k_unc * k_reach * k_dyn;
 }
 
 std::vector<double> AdaptiveKernel::computeBatch(
@@ -62,8 +67,10 @@ std::vector<double> AdaptiveKernel::computeBatch(
     std::vector<double> kernel_values(query_points.size());
     
     // Pre-compute common values
-    double length_scale = computeAdaptiveLengthScale(primitive.covariance, max_trace);
+    double length_scale = computeUncertaintyAdaptiveLengthScale(
+        primitive.covariance, max_trace, primitive.uncertainty);
     double k_unc = uncertaintyKernel(primitive.uncertainty);
+    double k_dyn = primitive.is_dynamic ? 0.5 : 1.0;
     double filter = filterFunction(primitive.uncertainty);
     
     if (filter < 0.5) {
@@ -92,7 +99,7 @@ std::vector<double> AdaptiveKernel::computeBatch(
         double distance = diff.norm();
         double k_reach = reachabilityKernel(primitive.semantic_class, distance);
         
-        kernel_values[i] = k_geo * k_unc * k_reach;
+        kernel_values[i] = k_geo * k_unc * k_reach * k_dyn;
     }
     
     return kernel_values;
@@ -188,19 +195,40 @@ double AdaptiveKernel::filterFunction(double uncertainty) const {
 double AdaptiveKernel::computeAdaptiveLengthScale(
     const Matrix3d& covariance,
     double max_trace) const {
-    
+
     if (max_trace < EPSILON) {
         return config_.length_scale_min;
     }
-    
+
     double trace = covariance.trace();
-    
+
     // Cube root scaling for 3D
     double ratio = std::pow(trace / max_trace, 1.0 / 3.0);
     ratio = std::clamp(ratio, 0.0, 1.0);
-    
-    return config_.length_scale_min + 
+
+    return config_.length_scale_min +
            (config_.length_scale_max - config_.length_scale_min) * ratio;
+}
+
+double AdaptiveKernel::computeUncertaintyAdaptiveLengthScale(
+    const Matrix3d& covariance,
+    double max_trace,
+    double uncertainty) const {
+
+    // Base geometric length scale
+    double base_ls = computeAdaptiveLengthScale(covariance, max_trace);
+
+    // EvSemMap-inspired adaptive scaling: expand kernel in high-uncertainty
+    // regions so that nearby certain observations can fill in the gaps.
+    // adaptive_factor = exp(1 + b * uncertainty), where b = -3.0 (shrink for
+    // certain regions) to e (expand maximally for total ignorance).
+    // Clamped to [0.5, 2.0] to keep the length scale reasonable.
+    constexpr double b = -3.0;
+    double adaptive_factor = std::exp(1.0 + b * uncertainty);
+    adaptive_factor = std::clamp(adaptive_factor, 0.5, 2.0);
+
+    double ls = base_ls * adaptive_factor;
+    return std::clamp(ls, config_.length_scale_min, config_.length_scale_max * 2.0);
 }
 
 std::vector<double> AdaptiveKernel::computeAllLengthScales(
