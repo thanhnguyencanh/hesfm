@@ -4,9 +4,6 @@ project(hesfm)
 set(HESFM_VERSION "1.0.0")
 add_definitions(-DHESFM_VERSION_STRING="${HESFM_VERSION}")
 
-cmake_minimum_required(VERSION 3.0.2)
-project(hesfm)
-
 #==============================================================================
 # Compiler Settings
 #==============================================================================
