@@ -506,20 +506,52 @@ std::vector<int> UncertaintyDecomposer::findNeighbors(
     const std::vector<SemanticPoint>& points,
     int query_idx,
     double radius) const {
-    
-    std::vector<int> neighbors;
-    const Vector3d& query_pos = points[query_idx].position;
-    const double radius_sq = radius * radius;
-    
+
+    // Voxel-grid accelerated neighbor search — O(N) build + O(k) per query
+    // instead of the original O(N) brute-force per query.
+    const double inv_r = 1.0 / radius;
+    auto vHash = [](int ix, int iy, int iz) -> size_t {
+        size_t h = 0;
+        h ^= std::hash<int>()(ix) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(iy) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<int>()(iz) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        return h;
+    };
+
+    // Build grid (amortised over all queries via static thread-local cache
+    // would be better, but for correctness we rebuild here — this function
+    // is only used as a fallback; processPointCloud() already has its own
+    // voxel grid in Phase 0).
+    std::unordered_map<size_t, std::vector<int>> grid;
+    grid.reserve(points.size());
     for (size_t i = 0; i < points.size(); ++i) {
-        if (static_cast<int>(i) == query_idx) continue;
-        
-        double dist_sq = (points[i].position - query_pos).squaredNorm();
-        if (dist_sq < radius_sq) {
-            neighbors.push_back(static_cast<int>(i));
+        int ix = static_cast<int>(std::floor(points[i].position.x() * inv_r));
+        int iy = static_cast<int>(std::floor(points[i].position.y() * inv_r));
+        int iz = static_cast<int>(std::floor(points[i].position.z() * inv_r));
+        grid[vHash(ix, iy, iz)].push_back(static_cast<int>(i));
+    }
+
+    const Vector3d& qp = points[query_idx].position;
+    int qx = static_cast<int>(std::floor(qp.x() * inv_r));
+    int qy = static_cast<int>(std::floor(qp.y() * inv_r));
+    int qz = static_cast<int>(std::floor(qp.z() * inv_r));
+    const double radius_sq = radius * radius;
+
+    std::vector<int> neighbors;
+    for (int dx = -1; dx <= 1; ++dx) {
+        for (int dy = -1; dy <= 1; ++dy) {
+            for (int dz = -1; dz <= 1; ++dz) {
+                auto it = grid.find(vHash(qx + dx, qy + dy, qz + dz));
+                if (it == grid.end()) continue;
+                for (int j : it->second) {
+                    if (j == query_idx) continue;
+                    if ((points[j].position - qp).squaredNorm() < radius_sq) {
+                        neighbors.push_back(j);
+                    }
+                }
+            }
         }
     }
-    
     return neighbors;
 }
 
@@ -527,12 +559,12 @@ double UncertaintyDecomposer::computeLocalDensity(
     const std::vector<SemanticPoint>& points,
     int query_idx,
     double radius) const {
-    
+
     auto neighbors = findNeighbors(points, query_idx, radius);
-    
+
     // Density = number of points / volume of sphere
     double volume = (4.0 / 3.0) * M_PI * radius * radius * radius;
-    
+
     return static_cast<double>(neighbors.size()) / volume;
 }
 

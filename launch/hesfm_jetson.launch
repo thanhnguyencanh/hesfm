@@ -41,6 +41,13 @@
   <!-- Processing (aggressive downsampling for speed) -->
   <arg name="downsample_factor" default="4"/>
   <arg name="map_resolution" default="0.08"/>
+
+  <!-- Processing options -->
+  <arg name="num_classes" default="37"/>
+
+  <!-- Segmentation backend: dformer, esanet_trt, esanet_pytorch -->
+  <arg name="segmentation_backend" default="esanet_trt"/>
+
   
   <!-- TensorRT engine path -->
   <arg name="trt_engine" default="$(find hesfm)/models/esanet_r34_sunrgbd_fp16.engine"/>
@@ -48,6 +55,9 @@
   
   <!-- Features -->
   <arg name="launch_exploration" default="false"/>
+  <arg name="launch_segmentation" default="true"/>
+  <arg name="semantic_cloud" default="true"/>
+  <arg name="launch_mapper" default="false"/>
   <arg name="rviz" default="true"/>
   
   <!-- ===================================================================== -->
@@ -86,79 +96,81 @@
   <!-- Semantic Segmentation (TensorRT) -->
   <!-- ===================================================================== -->
   
-  <node name="semantic_segmentation_node" pkg="hesfm" type="semantic_segmentation_node.py"
-        output="screen" respawn="true">
-    <!-- Input topics -->
-    <remap from="color/image_raw" to="$(arg camera_name)/color/image_raw"/>
-    <remap from="depth/image_rect_raw" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
-    <remap from="color/camera_info" to="$(arg camera_name)/color/camera_info"/>
-    
-    <!-- TensorRT backend -->
-    <param name="backend" value="esanet_trt"/>
-    <param name="esanet_trt_engine" value="$(arg trt_engine)"/>
-    
-    <!-- Input configuration -->
-    <param name="input_width" value="$(arg color_width)"/>
-    <param name="input_height" value="$(arg color_height)"/>
-    <param name="num_classes" value="37"/>
-    
-    <!-- Performance options -->
-    <param name="use_cuda" value="true"/>
-    <param name="fp16" value="true"/>
-    <param name="async_inference" value="true"/>
-    
-    <!-- Output options (minimal for speed) -->
-    <param name="publish_color" value="true"/>
-    <param name="publish_probabilities" value="false"/>
-    <param name="publish_uncertainty" value="true"/>
-  </node>
+  <group if="$(arg launch_segmentation)">
+    <node name="semantic_segmentation_node" pkg="hesfm" type="semantic_segmentation_node.py"
+          output="screen" respawn="false">
+      <!-- Input topics -->
+      <remap from="color/image_raw" to="$(arg camera_name)/color/image_raw"/>
+      <remap from="depth/image_rect_raw" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
+      <remap from="color/camera_info" to="$(arg camera_name)/color/camera_info"/>
+      
+      <!-- Parameters -->
+      <param name="backend" value="$(arg segmentation_backend)"/>
+      <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
+      <param name="num_classes" value="$(arg num_classes)"/>
+      <param name="input_height" value="480"/>
+      <param name="input_width" value="640"/>
+      <param name="confidence_threshold" value="0.3"/>
+
+      <!-- Model paths -->
+      <param name="dformer_model_path" value="$(find hesfm)/models/dformer_large_sunrgbd.pth"/>
+      <param name="esanet_model_path" value="$(find hesfm)/models/esanet_r34_sunrgbd.pth"/>
+      <param name="esanet_trt_engine" value="$(find hesfm)/models/esanet_r34_sunrgbd_fp16.engine"/>
+    </node>
+  </group>
   
   <!-- ===================================================================== -->
   <!-- Semantic Point Cloud (optimized) -->
   <!-- ===================================================================== -->
   
-  <node name="semantic_cloud_node" pkg="hesfm" type="semantic_cloud_node"
-        output="screen" respawn="true">
-    <remap from="color/image_raw" to="$(arg camera_name)/color/image_raw"/>
-    <remap from="depth/image_rect_raw" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
-    <remap from="color/camera_info" to="$(arg camera_name)/color/camera_info"/>
-    <remap from="semantic/image" to="semantic_segmentation_node/semantic_image"/>
-    
-    <!-- Aggressive downsampling -->
-    <param name="downsample_factor" value="$(arg downsample_factor)"/>
-    <param name="min_depth" value="0.2"/>
-    <param name="max_depth" value="5.0"/>
-    <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
-  </node>
+  <group if="$(arg semantic_cloud)">
+    <node name="semantic_cloud_node" pkg="hesfm" type="semantic_cloud_node"
+          output="screen" respawn="false">
+      <!-- Input topics -->
+      <remap from="color/image_raw" to="$(arg camera_name)/color/image_raw"/>
+      <remap from="depth/image_rect_raw" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
+      <remap from="color/camera_info" to="$(arg camera_name)/color/camera_info"/>
+      <remap from="semantic/image" to="semantic_segmentation_node/semantic_image"/>
+      
+      <!-- Parameters -->
+      <param name="downsample_factor" value="$(arg downsample_factor)"/>
+      <param name="min_depth" value="0.1"/>
+      <param name="max_depth" value="6.0"/>
+      <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
+      <param name="default_uncertainty" value="0.3"/>
+      <param name="queue_size" value="30"/>
+    </node>
+  </group>
   
   <!-- ===================================================================== -->
   <!-- HESFM Mapper (optimized) -->
   <!-- ===================================================================== -->
-  
-  <node name="hesfm_mapper_node" pkg="hesfm" type="hesfm_mapper_node"
-        output="screen" respawn="true">
-    <!-- Frame IDs -->
-    <param name="map_frame" value="$(arg map_frame)"/>
-    
-    <!-- Lower resolution map for speed -->
-    <param name="resolution" value="$(arg map_resolution)"/>
-    <param name="map_size_x" value="15.0"/>
-    <param name="map_size_y" value="15.0"/>
-    <param name="map_size_z" value="2.5"/>
-    <param name="num_classes" value="37"/>
-    
-    <!-- Reduced primitive count -->
-    <param name="target_primitives" value="64"/>
-    <param name="min_points_per_primitive" value="10"/>
-    
-    <!-- Lower publish rates -->
-    <param name="map_publish_rate" value="1.0"/>
-    <param name="costmap_publish_rate" value="2.0"/>
-    
-    <!-- Kernel parameters (faster) -->
-    <param name="length_scale_min" value="0.15"/>
-    <param name="length_scale_max" value="0.4"/>
-  </node>
+  <group if="$(arg launch_mapper)">
+    <node name="hesfm_mapper_node" pkg="hesfm" type="hesfm_mapper_node"
+          output="screen" respawn="true">
+      <!-- Frame IDs -->
+      <param name="map_frame" value="$(arg map_frame)"/>
+      
+      <!-- Lower resolution map for speed -->
+      <param name="resolution" value="$(arg map_resolution)"/>
+      <param name="map_size_x" value="15.0"/>
+      <param name="map_size_y" value="15.0"/>
+      <param name="map_size_z" value="2.5"/>
+      <param name="num_classes" value="37"/>
+      
+      <!-- Reduced primitive count -->
+      <param name="target_primitives" value="64"/>
+      <param name="min_points_per_primitive" value="10"/>
+      
+      <!-- Lower publish rates -->
+      <param name="map_publish_rate" value="1.0"/>
+      <param name="costmap_publish_rate" value="2.0"/>
+      
+      <!-- Kernel parameters (faster) -->
+      <param name="length_scale_min" value="0.15"/>
+      <param name="length_scale_max" value="0.4"/>
+    </node>
+  </group>
   
   <!-- ===================================================================== -->
   <!-- Costmap (simplified) -->

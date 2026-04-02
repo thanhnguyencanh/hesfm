@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <yaml-cpp/yaml.h>
 
 namespace hesfm {
 
@@ -123,114 +124,99 @@ bool HESFMConfig::saveToYAML(const std::string& filepath) const {
 }
 
 bool HESFMConfig::loadFromYAML(const std::string& filepath) {
-    std::ifstream file(filepath);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open file for reading: " << filepath << std::endl;
+    YAML::Node root;
+    try {
+        root = YAML::LoadFile(filepath);
+    } catch (const YAML::Exception& e) {
+        std::cerr << "Failed to load YAML: " << e.what() << std::endl;
         return false;
     }
-    
-    // Simple YAML parser (for production, use yaml-cpp)
-    std::string line;
-    std::string current_section;
-    
-    auto parseDouble = [](const std::string& value) -> double {
-        try {
-            return std::stod(value);
-        } catch (...) {
-            return 0.0;
-        }
+
+    // Helper lambdas for safe access
+    auto getD = [](const YAML::Node& n, const std::string& k, double def) {
+        return n[k] ? n[k].as<double>(def) : def;
     };
-    
-    auto parseInt = [](const std::string& value) -> int {
-        try {
-            return std::stoi(value);
-        } catch (...) {
-            return 0;
-        }
+    auto getI = [](const YAML::Node& n, const std::string& k, int def) {
+        return n[k] ? n[k].as<int>(def) : def;
     };
-    
-    auto trim = [](const std::string& str) -> std::string {
-        size_t start = str.find_first_not_of(" \t");
-        size_t end = str.find_last_not_of(" \t");
-        if (start == std::string::npos) return "";
-        return str.substr(start, end - start + 1);
+    auto getS = [](const YAML::Node& n, const std::string& k, const std::string& def) {
+        return n[k] ? n[k].as<std::string>(def) : def;
     };
-    
-    while (std::getline(file, line)) {
-        // Skip comments and empty lines
-        line = trim(line);
-        if (line.empty() || line[0] == '#') continue;
-        
-        // Check for section header
-        if (line.back() == ':' && line.find(':') == line.length() - 1) {
-            current_section = line.substr(0, line.length() - 1);
-            continue;
-        }
-        
-        // Parse key-value pair
-        size_t colon_pos = line.find(':');
-        if (colon_pos == std::string::npos) continue;
-        
-        std::string key = trim(line.substr(0, colon_pos));
-        std::string value = trim(line.substr(colon_pos + 1));
-        
-        // Remove quotes from string values
-        if (value.front() == '"' && value.back() == '"') {
-            value = value.substr(1, value.length() - 2);
-        }
-        
-        // Assign values based on section and key
-        if (current_section == "uncertainty") {
-            if (key == "w_semantic") uncertainty.w_semantic = parseDouble(value);
-            else if (key == "w_spatial") uncertainty.w_spatial = parseDouble(value);
-            else if (key == "w_observation") uncertainty.w_observation = parseDouble(value);
-            else if (key == "w_temporal") uncertainty.w_temporal = parseDouble(value);
-            else if (key == "spatial_radius") uncertainty.spatial_radius = parseDouble(value);
-            else if (key == "min_neighbors") uncertainty.min_neighbors = parseInt(value);
-        }
-        else if (current_section == "primitive") {
-            if (key == "target_primitives") primitive.target_primitives = parseInt(value);
-            else if (key == "min_points_per_primitive") primitive.min_points_per_primitive = parseInt(value);
-            else if (key == "conflict_threshold") primitive.conflict_threshold = parseDouble(value);
-            else if (key == "num_classes") primitive.num_classes = parseInt(value);
-        }
-        else if (current_section == "kernel") {
-            if (key == "length_scale_min") kernel.length_scale_min = parseDouble(value);
-            else if (key == "length_scale_max") kernel.length_scale_max = parseDouble(value);
-            else if (key == "uncertainty_threshold") kernel.uncertainty_threshold = parseDouble(value);
-            else if (key == "gamma") kernel.gamma = parseDouble(value);
-        }
-        else if (current_section == "map") {
-            if (key == "frame_id") map.frame_id = value;
-            else if (key == "resolution") map.resolution = parseDouble(value);
-            else if (key == "origin_x") map.origin_x = parseDouble(value);
-            else if (key == "origin_y") map.origin_y = parseDouble(value);
-            else if (key == "origin_z") map.origin_z = parseDouble(value);
-            else if (key == "size_x") map.size_x = parseDouble(value);
-            else if (key == "size_y") map.size_y = parseDouble(value);
-            else if (key == "size_z") map.size_z = parseDouble(value);
-            else if (key == "num_classes") map.num_classes = parseInt(value);
-        }
-        else if (current_section == "navigation") {
-            if (key == "costmap_height_min") navigation.costmap_height_min = parseDouble(value);
-            else if (key == "costmap_height_max") navigation.costmap_height_max = parseDouble(value);
-            else if (key == "inflation_radius") navigation.inflation_radius = parseDouble(value);
-        }
-        else if (current_section == "exploration") {
-            if (key == "max_distance") exploration.max_distance = parseDouble(value);
-            else if (key == "min_info_gain") exploration.min_info_gain = parseDouble(value);
-            else if (key == "max_goals") exploration.max_goals = parseInt(value);
-            else if (key == "sensor_range") exploration.sensor_range = parseDouble(value);
-        }
-        else if (current_section == "processing") {
-            if (key == "map_publish_rate") processing.map_publish_rate = parseDouble(value);
-            else if (key == "costmap_publish_rate") processing.costmap_publish_rate = parseDouble(value);
-            else if (key == "downsample_factor") processing.downsample_factor = parseInt(value);
-            else if (key == "num_threads") processing.num_threads = parseInt(value);
+
+    if (auto u = root["uncertainty"]) {
+        uncertainty.w_semantic    = getD(u, "w_semantic",    uncertainty.w_semantic);
+        uncertainty.w_spatial     = getD(u, "w_spatial",     uncertainty.w_spatial);
+        uncertainty.w_observation = getD(u, "w_observation", uncertainty.w_observation);
+        uncertainty.w_temporal    = getD(u, "w_temporal",    uncertainty.w_temporal);
+        uncertainty.spatial_radius = getD(u, "spatial_radius", uncertainty.spatial_radius);
+        uncertainty.min_neighbors  = getI(u, "min_neighbors",  uncertainty.min_neighbors);
+        uncertainty.sigma_range    = getD(u, "sigma_range",    uncertainty.sigma_range);
+        uncertainty.sigma_density  = getD(u, "sigma_density",  uncertainty.sigma_density);
+        uncertainty.sigma_angle    = getD(u, "sigma_angle",    uncertainty.sigma_angle);
+        uncertainty.normalizeWeights();
+    }
+
+    if (auto p = root["primitive"]) {
+        primitive.target_primitives        = getI(p, "target_primitives",        primitive.target_primitives);
+        primitive.min_points_per_primitive  = getI(p, "min_points_per_primitive", primitive.min_points_per_primitive);
+        primitive.conflict_threshold       = getD(p, "conflict_threshold",       primitive.conflict_threshold);
+        primitive.regularization           = getD(p, "regularization",           primitive.regularization);
+        primitive.uncertainty_weight_lambda = getD(p, "uncertainty_weight_lambda", primitive.uncertainty_weight_lambda);
+        primitive.num_classes               = getI(p, "num_classes",             primitive.num_classes);
+    }
+
+    if (auto k = root["kernel"]) {
+        kernel.length_scale_min      = getD(k, "length_scale_min",      kernel.length_scale_min);
+        kernel.length_scale_max      = getD(k, "length_scale_max",      kernel.length_scale_max);
+        kernel.uncertainty_threshold = getD(k, "uncertainty_threshold",  kernel.uncertainty_threshold);
+        kernel.uncertainty_low       = getD(k, "uncertainty_low",        kernel.uncertainty_low);
+        kernel.gamma                 = getD(k, "gamma",                  kernel.gamma);
+        kernel.reachability_lambda   = getD(k, "reachability_lambda",    kernel.reachability_lambda);
+        if (k["traversable_classes"]) {
+            kernel.traversable_classes.clear();
+            for (const auto& cls : k["traversable_classes"]) {
+                kernel.traversable_classes.insert(cls.as<int>());
+            }
         }
     }
-    
-    file.close();
+
+    if (auto m = root["map"]) {
+        map.frame_id     = getS(m, "frame_id",     map.frame_id);
+        map.resolution   = getD(m, "resolution",   map.resolution);
+        map.origin_x     = getD(m, "origin_x",     map.origin_x);
+        map.origin_y     = getD(m, "origin_y",     map.origin_y);
+        map.origin_z     = getD(m, "origin_z",     map.origin_z);
+        map.size_x       = getD(m, "size_x",       map.size_x);
+        map.size_y       = getD(m, "size_y",       map.size_y);
+        map.size_z       = getD(m, "size_z",       map.size_z);
+        map.num_classes   = getI(m, "num_classes",  map.num_classes);
+        map.log_odds_min  = getD(m, "log_odds_min", map.log_odds_min);
+        map.log_odds_max  = getD(m, "log_odds_max", map.log_odds_max);
+    }
+
+    if (auto n = root["navigation"]) {
+        navigation.costmap_height_min = getD(n, "costmap_height_min", navigation.costmap_height_min);
+        navigation.costmap_height_max = getD(n, "costmap_height_max", navigation.costmap_height_max);
+        navigation.inflation_radius   = getD(n, "inflation_radius",   navigation.inflation_radius);
+        navigation.min_confidence     = getD(n, "min_confidence",      navigation.min_confidence);
+    }
+
+    if (auto e = root["exploration"]) {
+        exploration.max_distance  = getD(e, "max_distance",  exploration.max_distance);
+        exploration.min_info_gain = getD(e, "min_info_gain", exploration.min_info_gain);
+        exploration.max_goals     = getI(e, "max_goals",     exploration.max_goals);
+        exploration.sensor_range  = getD(e, "sensor_range",  exploration.sensor_range);
+        exploration.sensor_fov_horizontal = getD(e, "sensor_fov_horizontal", exploration.sensor_fov_horizontal);
+        exploration.sensor_fov_vertical   = getD(e, "sensor_fov_vertical",   exploration.sensor_fov_vertical);
+    }
+
+    if (auto pr = root["processing"]) {
+        processing.map_publish_rate     = getD(pr, "map_publish_rate",     processing.map_publish_rate);
+        processing.costmap_publish_rate = getD(pr, "costmap_publish_rate", processing.costmap_publish_rate);
+        processing.downsample_factor    = getI(pr, "downsample_factor",    processing.downsample_factor);
+        processing.num_threads          = getI(pr, "num_threads",          processing.num_threads);
+    }
+
     return true;
 }
 

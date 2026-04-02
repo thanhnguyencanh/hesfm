@@ -463,6 +463,78 @@ std::vector<int> GaussianPrimitiveBuilder::uncertaintyWeightedKMeans(
 }
 
 // =============================================================================
+// Adaptive Merge/Split
+// =============================================================================
+
+std::vector<GaussianPrimitive> GaussianPrimitiveBuilder::refinePrimitives(
+    const std::vector<GaussianPrimitive>& primitives,
+    const std::vector<SemanticPoint>& points,
+    double merge_distance) {
+
+    if (primitives.size() <= 1) return primitives;
+
+    // --- Phase 1: Merge nearby primitives with same dominant class ----------
+    std::vector<bool> merged(primitives.size(), false);
+    std::vector<GaussianPrimitive> result;
+    result.reserve(primitives.size());
+
+    for (size_t i = 0; i < primitives.size(); ++i) {
+        if (merged[i]) continue;
+
+        GaussianPrimitive current = primitives[i];
+
+        // Look for merge candidates
+        for (size_t j = i + 1; j < primitives.size(); ++j) {
+            if (merged[j]) continue;
+
+            // Same dominant class?
+            if (current.semantic_class != primitives[j].semantic_class) continue;
+
+            // Close enough?
+            double dist = (current.centroid - primitives[j].centroid).norm();
+            if (dist > merge_distance) continue;
+
+            // Both low-conflict?
+            if (current.conflict > config_.conflict_threshold ||
+                primitives[j].conflict > config_.conflict_threshold) continue;
+
+            current = mergePrimitives(current, primitives[j]);
+            merged[j] = true;
+        }
+
+        result.push_back(current);
+    }
+
+    // --- Phase 2: Split high-conflict primitives ----------------------------
+    std::vector<GaussianPrimitive> refined;
+    refined.reserve(result.size());
+
+    for (const auto& prim : result) {
+        if (prim.conflict > config_.conflict_threshold && prim.point_count >= 2 * config_.min_points_per_primitive) {
+            // Gather points near this primitive to use for splitting
+            std::vector<SemanticPoint> nearby;
+            for (const auto& pt : points) {
+                if ((pt.position - prim.centroid).squaredNorm() <
+                    prim.covariance.trace() * 9.0) {
+                    nearby.push_back(pt);
+                }
+            }
+
+            if (nearby.size() >= static_cast<size_t>(2 * config_.min_points_per_primitive)) {
+                auto splits = splitPrimitive(prim, nearby, 2);
+                refined.insert(refined.end(), splits.begin(), splits.end());
+            } else {
+                refined.push_back(prim);
+            }
+        } else {
+            refined.push_back(prim);
+        }
+    }
+
+    return refined;
+}
+
+// =============================================================================
 // Utility Methods
 // =============================================================================
 

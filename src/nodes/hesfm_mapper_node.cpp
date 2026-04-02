@@ -140,14 +140,17 @@ private:
         pnh_.param("primitives/target_primitives",        config_.primitive.target_primitives,        512);
         pnh_.param("primitives/min_points_per_primitive", config_.primitive.min_points_per_primitive,  5);
         pnh_.param("primitives/regularization",           config_.primitive.regularization,            0.01);
-        // High conflict_threshold keeps most primitives (low = too aggressive filtering)
-        pnh_.param("primitives/conflict_threshold",       config_.primitive.conflict_threshold,        0.9);
+        // Conflict threshold: 0.7 balances filtering vs. retaining useful primitives.
+        // Too high (0.9) lets poor-quality primitives through; too low (0.3) is
+        // overly aggressive given background mass in 37-class DST fusion.
+        pnh_.param("primitives/conflict_threshold",       config_.primitive.conflict_threshold,        0.7);
 
         // Kernel parameters — YAML nested under "kernel/"
         pnh_.param("kernel/length_scale_min",      config_.kernel.length_scale_min,      0.1);
         pnh_.param("kernel/length_scale_max",      config_.kernel.length_scale_max,      0.5);
-        // High uncertainty_threshold keeps high-uncertainty primitives too
-        pnh_.param("kernel/uncertainty_threshold", config_.kernel.uncertainty_threshold,  0.95);
+        // Uncertainty threshold: 0.75 gates out genuinely uncertain primitives
+        // while still accepting moderately uncertain ones for map coverage.
+        pnh_.param("kernel/uncertainty_threshold", config_.kernel.uncertainty_threshold,  0.75);
         pnh_.param("kernel/gamma",                 config_.kernel.gamma,                  2.0);
 
         // Navigation parameters — YAML nested under "navigation/"

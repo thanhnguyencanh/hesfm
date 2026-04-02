@@ -200,9 +200,27 @@ public:
         std::vector<Vector3d>& centroids);
     
     // =========================================================================
+    // Adaptive Merge/Split
+    // =========================================================================
+
+    /**
+     * @brief Refine a set of primitives by merging nearby same-class
+     *        primitives and splitting high-conflict ones.
+     *
+     * @param primitives     Input primitives
+     * @param points         Original points (needed for splitting)
+     * @param merge_distance Euclidean threshold for merge candidates
+     * @return Refined primitives
+     */
+    std::vector<GaussianPrimitive> refinePrimitives(
+        const std::vector<GaussianPrimitive>& primitives,
+        const std::vector<SemanticPoint>& points,
+        double merge_distance = 0.3);
+
+    // =========================================================================
     // Utility Methods
     // =========================================================================
-    
+
     /**
      * @brief Compute maximum covariance trace (for length scale normalization)
      */

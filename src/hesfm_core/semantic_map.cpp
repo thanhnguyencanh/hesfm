@@ -10,6 +10,7 @@
 #include <numeric>
 #include <cmath>
 #include <fstream>
+#include <sstream>
 
 namespace hesfm {
 
@@ -74,10 +75,21 @@ void SemanticMap::update(const std::vector<GaussianPrimitive>& primitives,
         max_bound.y() = std::min(max_bound.y(), config_.origin_y + config_.size_y);
         max_bound.z() = std::min(max_bound.z(), config_.origin_z + config_.size_z);
         
-        // Iterate over cells in bounding box
-        for (double x = min_bound.x(); x <= max_bound.x(); x += config_.resolution) {
-            for (double y = min_bound.y(); y <= max_bound.y(); y += config_.resolution) {
-                for (double z = min_bound.z(); z <= max_bound.z(); z += config_.resolution) {
+        // Iterate over cells in bounding box using integer grid indices
+        // to avoid floating-point drift from repeated addition
+        int ix_min = static_cast<int>(std::floor((min_bound.x() - config_.origin_x) / config_.resolution));
+        int iy_min = static_cast<int>(std::floor((min_bound.y() - config_.origin_y) / config_.resolution));
+        int iz_min = static_cast<int>(std::floor((min_bound.z() - config_.origin_z) / config_.resolution));
+        int ix_max = static_cast<int>(std::floor((max_bound.x() - config_.origin_x) / config_.resolution));
+        int iy_max = static_cast<int>(std::floor((max_bound.y() - config_.origin_y) / config_.resolution));
+        int iz_max = static_cast<int>(std::floor((max_bound.z() - config_.origin_z) / config_.resolution));
+
+        for (int ix = ix_min; ix <= ix_max; ++ix) {
+            double x = config_.origin_x + ix * config_.resolution;
+            for (int iy = iy_min; iy <= iy_max; ++iy) {
+                double y = config_.origin_y + iy * config_.resolution;
+                for (int iz = iz_min; iz <= iz_max; ++iz) {
+                    double z = config_.origin_z + iz * config_.resolution;
                     Vector3d cell_pos(x, y, z);
                     
                     // Compute kernel value
@@ -187,13 +199,26 @@ void SemanticMap::updateCell(const Vector3d& position,
 
 void SemanticMap::applyTemporalDecay(double decay_rate, double current_time, double max_age) {
     std::unique_lock<std::shared_mutex> lock(mutex_);
-    
+
     for (auto& [hash, cell] : cells_) {
         double age = current_time - cell.state.last_update_time;
-        
+
         if (age > max_age) {
-            // Apply decay to log-odds (towards zero = uniform)
-            cell.state.log_odds *= (1.0 - decay_rate);
+            // Per-class decay: high-confidence classes decay slower.
+            // This preserves well-established semantic labels while
+            // allowing uncertain cells to return towards the prior.
+            VectorXd probs = cell.state.getProbabilities();
+            for (int c = 0; c < cell.state.log_odds.size(); ++c) {
+                // Effective decay is reduced proportionally to class probability:
+                //   decay_c = decay_rate * (1 - prob_c)
+                // So the dominant class (prob ~1) barely decays, while low-
+                // probability classes decay at nearly the full rate.
+                double class_decay = decay_rate * (1.0 - probs(c));
+                cell.state.log_odds(c) *= (1.0 - class_decay);
+            }
+
+            // Also decay dynamic status transitions
+            cell.dynamic_status.decayTransitions(current_time);
         }
     }
 }
@@ -502,8 +527,87 @@ bool SemanticMap::save(const std::string& filepath, const std::string& format) c
 }
 
 bool SemanticMap::load(const std::string& filepath) {
-    // Simplified loader - a full implementation would parse YAML
-    return false;
+    std::ifstream file(filepath);
+    if (!file.is_open()) return false;
+
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    cells_.clear();
+    total_observations_ = 0;
+
+    std::string line;
+    bool in_cells = false;
+    Vector3d pos = Vector3d::Zero();
+    int cls = 0;
+    double conf = 0.0;
+    int obs = 0;
+    bool have_pos = false;
+
+    while (std::getline(file, line)) {
+        // Trim leading whitespace
+        size_t start = line.find_first_not_of(" \t");
+        if (start == std::string::npos) continue;
+        line = line.substr(start);
+
+        if (line[0] == '#') continue;
+
+        // Header fields
+        if (!in_cells) {
+            if (line.rfind("resolution:", 0) == 0)
+                config_.resolution = std::stod(line.substr(12));
+            else if (line.rfind("num_classes:", 0) == 0)
+                config_.num_classes = std::stoi(line.substr(13));
+            else if (line.rfind("cells:", 0) == 0)
+                in_cells = true;
+            continue;
+        }
+
+        // Inside cells section
+        if (line.rfind("- pos: [", 0) == 0) {
+            // Flush previous cell if we have one
+            if (have_pos) {
+                MapCell& cell = getOrCreateCell(pos);
+                // Set predicted class via log-odds bump
+                if (cls >= 0 && cls < config_.num_classes) {
+                    cell.state.log_odds(cls) += 5.0;  // Strong prior
+                    cell.state.log_odds(cls) = clampLogOdds(cell.state.log_odds(cls));
+                }
+                cell.state.observation_count = obs;
+                cell.updateFunctionalAttributes(0.0);
+            }
+            // Parse "- pos: [x, y, z]"
+            size_t bracket = line.find('[');
+            size_t end_bracket = line.find(']');
+            if (bracket != std::string::npos && end_bracket != std::string::npos) {
+                std::string coords = line.substr(bracket + 1, end_bracket - bracket - 1);
+                std::istringstream ss(coords);
+                char comma;
+                ss >> pos.x() >> comma >> pos.y() >> comma >> pos.z();
+                have_pos = true;
+            }
+        } else if (line.rfind("class:", 0) == 0) {
+            cls = std::stoi(line.substr(7));
+        } else if (line.rfind("confidence:", 0) == 0) {
+            conf = std::stod(line.substr(12));
+            (void)conf;  // confidence is derived from log-odds
+        } else if (line.rfind("observations:", 0) == 0) {
+            obs = std::stoi(line.substr(14));
+        }
+    }
+
+    // Flush last cell
+    if (have_pos) {
+        MapCell& cell = getOrCreateCell(pos);
+        if (cls >= 0 && cls < config_.num_classes) {
+            cell.state.log_odds(cls) += 5.0;
+            cell.state.log_odds(cls) = clampLogOdds(cell.state.log_odds(cls));
+        }
+        cell.state.observation_count = obs;
+        cell.updateFunctionalAttributes(0.0);
+    }
+
+    total_observations_ = cells_.size();
+    file.close();
+    return true;
 }
 
 std::vector<std::tuple<Vector3d, int, double>> SemanticMap::toPointCloud() const {
