@@ -28,7 +28,7 @@
   <arg name="serial_no" default=""/>
 
   <!-- Frame IDs -->
-  <arg name="map_frame" default="map"/>
+  <arg name="map_frame" default="global"/>
   <arg name="odom_frame" default="odom"/>
   <arg name="base_frame" default="camera_link"/>
   
@@ -52,14 +52,14 @@
   <arg name="launch_camera" default="true"/>
   <arg name="launch_segmentation" default="true"/>
   <arg name="semantic_cloud" default="true"/>
-  <arg name="launch_mapper" default="false"/>
+  <arg name="launch_mapper" default="true"/>
   <arg name="launch_costmap" default="false"/>
   <arg name="launch_visualization" default="false"/>
   <arg name="rviz" default="true"/>
   <arg name="launch_costmap_3d" default="false"/>
 
   <!-- OpenVINS VIO (ov_msckf) -->
-  <arg name="launch_ov_msckf"   default="false"/>
+  <arg name="launch_ov_msckf"   default="true"/>
   <arg name="ov_msckf_config"   default="rs_d455"/>  <!-- calibration folder under ov_msckf/../config/ -->
   <arg name="ov_msckf_verbosity" default="INFO"/>
   <arg name="ov_msckf_output" default="log"/>  <!-- roslaunch output mode for ov_msckf: 'screen' or 'log' -->
@@ -75,9 +75,8 @@
     <include file="$(find hesfm)/launch/d455_camera.launch">
       <arg name="camera_name" value="$(arg camera_name)"/>
       <arg name="serial_no" value="$(arg serial_no)"/>
-      <arg name="filters" value=""/>
 
-      <!-- Minimal streams -->
+      <!-- Streams -->
       <arg name="enable_color" value="true"/>
       <arg name="enable_depth" value="true"/>
       <arg name="enable_infra1" value="true"/>
@@ -85,6 +84,9 @@
       <arg name="enable_pointcloud" value="false"/>
       <arg name="enable_gyro" value="true"/>
       <arg name="enable_accel" value="true"/>
+
+      <arg name="infra_width"  value="640"/>
+      <arg name="infra_height" value="480"/>
     </include>
   </group>
   
@@ -126,12 +128,12 @@
       <remap from="depth/image_rect_raw" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
       <remap from="color/camera_info" to="$(arg camera_name)/color/camera_info"/>
       <remap from="semantic/image" to="semantic_segmentation_node/semantic_image"/>
+      <remap from="semantic/uncertainty" to="semantic_segmentation_node/uncertainty"/>
       
       <!-- Parameters -->
       <param name="downsample_factor" value="$(arg downsample_factor)"/>
-      <param name="min_depth" value="0.1"/>
+      <param name="min_depth" value="0.06"/>
       <param name="max_depth" value="6.0"/>
-      <param name="output_frame" value="$(arg base_frame)"/>
       <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
       <param name="default_uncertainty" value="0.3"/>
       <param name="queue_size" value="30"/>

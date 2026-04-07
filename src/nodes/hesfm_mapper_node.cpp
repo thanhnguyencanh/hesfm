@@ -196,9 +196,13 @@ private:
         // Primitives visualization publisher
         primitives_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("primitives", 1);
         
-        // Uncertainty map publisher
+        // Uncertainty map publisher (from map cells)
         uncertainty_map_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("uncertainty_map", 1);
-        
+
+        // Per-point uncertainty decomposition cloud (from current observation)
+        // Fields: x,y,z + 5 floats (u_sem, u_spa, u_obs, u_temp, u_total)
+        uncertainty_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("uncertainty_cloud", 1);
+
         ROS_INFO("Publishers initialized");
     }
     
@@ -258,8 +262,14 @@ private:
         }
         
         // Process through HESFM pipeline
+        // (this runs uncertainty_decomposer_.processPointCloud() which fills all 4 components)
         int num_primitives = pipeline_->process(points, sensor_origin);
-        
+
+        // Publish per-point uncertainty decomposition cloud (after process() has filled all 4 components)
+        if (uncertainty_cloud_pub_.getNumSubscribers() > 0) {
+            publishUncertaintyCloud(points, msg->header);
+        }
+
         // Store current primitives for visualization
         current_primitives_ = pipeline_->getPrimitiveBuilder().buildPrimitives(points);
         
@@ -536,6 +546,62 @@ private:
         uncertainty_map_pub_.publish(msg);
     }
     
+    /**
+     * @brief Publish per-point uncertainty decomposition as a PointCloud2
+     *
+     * Each point carries 5 intensity channels (u_sem, u_spa, u_obs, u_temp, u_total).
+     * RViz can colour by any channel. We encode them as a custom cloud with
+     * fields: x, y, z, u_sem, u_spa, u_obs, u_temp, u_total.
+     * For easy quick visualisation we also set the rgb field = heat-map of u_total.
+     */
+    void publishUncertaintyCloud(const std::vector<hesfm::SemanticPoint>& points,
+                                  const std_msgs::Header& header) {
+
+        // Downsample: publish every 4th point to keep bandwidth low
+        const int step = 4;
+        size_t out_count = (points.size() + step - 1) / step;
+
+        sensor_msgs::PointCloud2 msg;
+        msg.header = header;
+        msg.header.frame_id = map_frame_;
+        msg.height = 1;
+        msg.width = static_cast<uint32_t>(out_count);
+        msg.is_bigendian = false;
+        msg.is_dense = true;
+
+        // Build fields manually (8 x float32 = 32 bytes per point)
+        const uint32_t point_step = 8 * sizeof(float);
+        const char* names[] = {"x","y","z","u_sem","u_spa","u_obs","u_temp","u_total"};
+        msg.fields.resize(8);
+        for (int f = 0; f < 8; ++f) {
+            msg.fields[f].name     = names[f];
+            msg.fields[f].offset   = f * sizeof(float);
+            msg.fields[f].datatype = sensor_msgs::PointField::FLOAT32;
+            msg.fields[f].count    = 1;
+        }
+        msg.point_step = point_step;
+        msg.row_step   = point_step * msg.width;
+        msg.data.resize(msg.row_step * msg.height);
+
+        size_t idx = 0;
+        for (size_t i = 0; i < points.size(); i += step, ++idx) {
+            const auto& p = points[i];
+            float vals[8] = {
+                static_cast<float>(p.position.x()),
+                static_cast<float>(p.position.y()),
+                static_cast<float>(p.position.z()),
+                static_cast<float>(p.uncertainty_semantic),
+                static_cast<float>(p.uncertainty_spatial),
+                static_cast<float>(p.uncertainty_observation),
+                static_cast<float>(p.uncertainty_temporal),
+                static_cast<float>(p.uncertainty_total)
+            };
+            memcpy(&msg.data[idx * point_step], vals, point_step);
+        }
+
+        uncertainty_cloud_pub_.publish(msg);
+    }
+
     // =========================================================================
     // Statistics
     // =========================================================================
@@ -570,7 +636,8 @@ private:
     ros::Publisher costmap_pub_;
     ros::Publisher primitives_pub_;
     ros::Publisher uncertainty_map_pub_;
-    
+    ros::Publisher uncertainty_cloud_pub_;
+
     // Subscribers
     ros::Subscriber cloud_sub_;
     

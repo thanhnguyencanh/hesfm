@@ -81,7 +81,7 @@ private:
 
         // Processing parameters
         pnh_.param("downsample_factor", downsample_factor_, 2);
-        pnh_.param("min_depth", min_depth_, 0.1);
+        pnh_.param("min_depth", min_depth_, 0.06);
         pnh_.param("max_depth", max_depth_, 6.0);
 
         // Queue sizes
@@ -95,21 +95,20 @@ private:
         // Camera info (non-synchronized, just store latest)
         camera_info_sub_ = nh_.subscribe("color/camera_info", 1,
                                           &SemanticCloudNode::cameraInfoCallback, this);
-        
-        // Synchronized subscribers for RGB, depth, and semantic
+
+        // Synchronized subscribers for RGB, depth, semantic, and uncertainty
         rgb_sub_.subscribe(nh_, "color/image_raw", queue_size_);
         depth_sub_.subscribe(nh_, "depth/image_rect_raw", queue_size_);
         semantic_sub_.subscribe(nh_, "semantic/image", queue_size_);
+        uncertainty_sub_.subscribe(nh_, "semantic/uncertainty", queue_size_);
 
-        // Approximate time synchronizer
-        // Use a larger queue and generous interval to handle segmentation delay (~90ms)
+        // Approximate time synchronizer (4-topic)
         sync_ = std::make_shared<Sync>(SyncPolicy(queue_size_),
-                                        rgb_sub_, depth_sub_, semantic_sub_);
-        sync_->setMaxIntervalDuration(ros::Duration(0.5));  // allow up to 500ms skew
+                                        rgb_sub_, depth_sub_, semantic_sub_,
+                                        uncertainty_sub_);
+        sync_->setMaxIntervalDuration(ros::Duration(0.5));
         sync_->registerCallback(boost::bind(&SemanticCloudNode::syncCallback,
-                                            this, _1, _2, _3));
-        
-        // ROS_INFO("Subscribed to synchronized topics");
+                                            this, _1, _2, _3, _4));
     }
     
     void setupPublishers() {
@@ -139,47 +138,30 @@ private:
     
     void syncCallback(const sensor_msgs::Image::ConstPtr& rgb_msg,
                       const sensor_msgs::Image::ConstPtr& depth_msg,
-                      const sensor_msgs::Image::ConstPtr& semantic_msg) {
-        
+                      const sensor_msgs::Image::ConstPtr& semantic_msg,
+                      const sensor_msgs::Image::ConstPtr& uncertainty_msg) {
+
         if (!has_camera_info_) {
             ROS_WARN_THROTTLE(1.0, "[cloud] waiting for camera info");
             return;
         }
 
-        // Debug: uncomment to check camera info / timestamps / image sizes
-        // ROS_INFO_ONCE("[cloud] camera info ready (fx=%.1f fy=%.1f cx=%.1f cy=%.1f %dx%d)",
-        //               fx_, fy_, cx_, cy_, width_, height_);
-        // double dt_depth    = std::abs((depth_msg->header.stamp    - rgb_msg->header.stamp).toSec());
-        // double dt_semantic = std::abs((semantic_msg->header.stamp - rgb_msg->header.stamp).toSec());
-        // ROS_INFO_THROTTLE(2.0, "[cloud] sync: dt_depth=%.3fs dt_semantic=%.3fs", dt_depth, dt_semantic);
-        // ros::Time start_time = ros::Time::now();
-
-        cv_bridge::CvImageConstPtr rgb_cv, depth_cv, semantic_cv;
+        cv_bridge::CvImageConstPtr rgb_cv, depth_cv, semantic_cv, uncertainty_cv;
         try {
-            rgb_cv      = cv_bridge::toCvShare(rgb_msg, "bgr8");
-            depth_cv    = cv_bridge::toCvShare(depth_msg);
-            semantic_cv = cv_bridge::toCvShare(semantic_msg);
+            rgb_cv         = cv_bridge::toCvShare(rgb_msg, "bgr8");
+            depth_cv       = cv_bridge::toCvShare(depth_msg);
+            semantic_cv    = cv_bridge::toCvShare(semantic_msg);
+            uncertainty_cv = cv_bridge::toCvShare(uncertainty_msg, "mono8");
         } catch (cv_bridge::Exception& e) {
             ROS_ERROR("[cloud] cv_bridge: %s", e.what());
             return;
         }
 
-        // Debug: uncomment to verify image dimensions and encodings
-        // ROS_INFO_ONCE("[cloud] rgb=%dx%d enc=%s | depth=%dx%d enc=%s | semantic=%dx%d enc=%s",
-        //               rgb_cv->image.cols, rgb_cv->image.rows, rgb_msg->encoding.c_str(),
-        //               depth_cv->image.cols, depth_cv->image.rows, depth_msg->encoding.c_str(),
-        //               semantic_cv->image.cols, semantic_cv->image.rows, semantic_msg->encoding.c_str());
-
         sensor_msgs::PointCloud2 cloud_msg;
         generateSemanticCloud(rgb_cv->image, depth_cv->image, semantic_cv->image,
-                              rgb_msg->header, cloud_msg);
+                              uncertainty_cv->image, rgb_msg->header, cloud_msg);
 
         cloud_pub_.publish(cloud_msg);
-
-        // Debug: uncomment to monitor point count and processing time
-        // ROS_INFO_THROTTLE(2.0, "[cloud] %u points generated", cloud_msg.width);
-        // double processing_time = (ros::Time::now() - start_time).toSec() * 1000.0;
-        // ROS_INFO_THROTTLE(2.0, "[cloud] total=%.1f ms", processing_time);
     }
     
     // =========================================================================
@@ -189,27 +171,31 @@ private:
     void generateSemanticCloud(const cv::Mat& rgb,
                                 const cv::Mat& depth,
                                 const cv::Mat& semantic,
+                                const cv::Mat& uncertainty,
                                 const std_msgs::Header& header,
                                 sensor_msgs::PointCloud2& cloud_msg) {
-        
+
         // Determine output dimensions
         int out_width = width_ / downsample_factor_;
         int out_height = height_ / downsample_factor_;
-        
+
         // Resize images if needed
-        cv::Mat depth_resized, semantic_resized, rgb_resized;
-        
+        cv::Mat depth_resized, semantic_resized, rgb_resized, uncertainty_resized;
+
         if (downsample_factor_ > 1) {
-            cv::resize(depth, depth_resized, cv::Size(out_width, out_height), 
+            cv::resize(depth, depth_resized, cv::Size(out_width, out_height),
                        0, 0, cv::INTER_NEAREST);
             cv::resize(semantic, semantic_resized, cv::Size(out_width, out_height),
                        0, 0, cv::INTER_NEAREST);
             cv::resize(rgb, rgb_resized, cv::Size(out_width, out_height),
                        0, 0, cv::INTER_LINEAR);
+            cv::resize(uncertainty, uncertainty_resized, cv::Size(out_width, out_height),
+                       0, 0, cv::INTER_LINEAR);
         } else {
             depth_resized = depth;
             semantic_resized = semantic;
             rgb_resized = rgb;
+            uncertainty_resized = uncertainty;
         }
         
         // Adjust intrinsics for downsampling
@@ -284,8 +270,10 @@ private:
                                (static_cast<uint32_t>(color[1]) << 8) |
                                static_cast<uint32_t>(color[2]);
                 
-                // Compute depth-based uncertainty
-                float uncertainty = computeUncertainty(d, u, v, out_width, out_height);
+                // Use real per-pixel semantic uncertainty from segmentation node
+                // (published as mono8: 0-255 → 0.0-1.0)
+                float uncertainty = static_cast<float>(
+                    uncertainty_resized.at<uint8_t>(v, u)) / 255.0f;
                 
                 // Write to point cloud
                 *iter_x = x;
@@ -327,18 +315,6 @@ private:
         }
     }
     
-    float computeUncertainty(float depth, int u, int v, int width, int height) {
-        // Base uncertainty from depth (increases with distance)
-        float depth_uncertainty = 0.1f + 0.1f * (depth / max_depth_);
-        
-        // Edge uncertainty (higher near image borders)
-        float edge_x = std::min(u, width - u) / static_cast<float>(width / 2);
-        float edge_y = std::min(v, height - v) / static_cast<float>(height / 2);
-        float edge_uncertainty = 0.1f * (1.0f - std::min(edge_x, edge_y));
-        
-        return std::min(1.0f, depth_uncertainty + edge_uncertainty);
-    }
-    
     // =========================================================================
     // Member Variables
     // =========================================================================
@@ -352,10 +328,12 @@ private:
     message_filters::Subscriber<sensor_msgs::Image> rgb_sub_;
     message_filters::Subscriber<sensor_msgs::Image> depth_sub_;
     message_filters::Subscriber<sensor_msgs::Image> semantic_sub_;
-    
-    // Synchronizer
+    message_filters::Subscriber<sensor_msgs::Image> uncertainty_sub_;
+
+    // Synchronizer (4 topics: rgb, depth, semantic labels, semantic uncertainty)
     typedef message_filters::sync_policies::ApproximateTime<
-        sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::Image> SyncPolicy;
+        sensor_msgs::Image, sensor_msgs::Image,
+        sensor_msgs::Image, sensor_msgs::Image> SyncPolicy;
     typedef message_filters::Synchronizer<SyncPolicy> Sync;
     std::shared_ptr<Sync> sync_;
     

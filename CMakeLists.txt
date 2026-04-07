@@ -411,7 +411,15 @@ if(CATKIN_ENABLE_TESTING)
     ${catkin_LIBRARIES}
     ${GTEST_LIBRARIES}
   )
-  
+
+  catkin_add_gtest(test_core test/test_core.cpp)
+  target_link_libraries(test_core
+    hesfm_core
+    ${catkin_LIBRARIES}
+    ${GTEST_LIBRARIES}
+    yaml-cpp
+  )
+
   ## Python tests
   catkin_add_nosetests(test/test_hesfm.py)
 endif()
