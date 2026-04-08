@@ -808,7 +808,7 @@ class SemanticSegmentationNode:
         self.total_time += elapsed
         self.frame_count += 1
         if self.frame_count % 90 == 0:
-            rospy.loginfo(f"Segmentation FPS: {self.frame_count / self.total_time:.1f}")
+            # rospy.loginfo(f"Segmentation FPS: {self.frame_count / self.total_time:.1f}")
 
         # Create header
         header = Header()

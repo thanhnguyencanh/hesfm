@@ -218,13 +218,15 @@ double AdaptiveKernel::computeUncertaintyAdaptiveLengthScale(
     // Base geometric length scale
     double base_ls = computeAdaptiveLengthScale(covariance, max_trace);
 
-    // EvSemMap-inspired adaptive scaling: expand kernel in high-uncertainty
-    // regions so that nearby certain observations can fill in the gaps.
-    // adaptive_factor = exp(1 + b * uncertainty), where b = -3.0 (shrink for
-    // certain regions) to e (expand maximally for total ignorance).
-    // Clamped to [0.5, 2.0] to keep the length scale reasonable.
-    constexpr double b = -3.0;
-    double adaptive_factor = std::exp(1.0 + b * uncertainty);
+    // Adaptive scaling: certain observations → tight kernel (precise mapping).
+    //                  uncertain observations → expanded kernel (fill observation gaps).
+    // adaptive_factor = exp(-1 + 3 * uncertainty)
+    //   uncertainty=0.0 → exp(-1)   = 0.37 → clamped to 0.5 (tight, certain)
+    //   uncertainty=0.3 → exp(-0.1) = 0.90 → near-baseline
+    //   uncertainty=0.5 → exp(+0.5) = 1.65 → moderate expansion
+    //   uncertainty=0.7 → exp(+1.1) = 3.00 → clamped to 2.0 (wide, uncertain)
+    constexpr double b = 3.0;
+    double adaptive_factor = std::exp(-1.0 + b * uncertainty);
     adaptive_factor = std::clamp(adaptive_factor, 0.5, 2.0);
 
     double ls = base_ls * adaptive_factor;

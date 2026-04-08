@@ -137,6 +137,7 @@
       <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
       <param name="default_uncertainty" value="0.3"/>
       <param name="queue_size" value="30"/>
+      <param name="output_frame" value="camera_accel_optical_frame"/>
     </node>
   </group>
   
@@ -254,9 +255,11 @@
       <arg name="verbosity"   value="$(arg ov_msckf_verbosity)"/>
       <arg name="output"      value="$(arg ov_msckf_output)"/>
     </include>
-    <!-- Bridge: hesfm map frame ↔ ov_msckf world frame -->
-    <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_global"
-          args="0 0 0 0 0 0 imu camera_link "/>
+    <!-- Bridge: OpenVINS imu frame (optical: x-right, y-down, z-forward)
+         → RealSense camera_link (ROS: x-forward, y-left, z-up).
+         Quaternion (0.5, -0.5, 0.5, 0.5) rotates optical convention to ROS body convention. -->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="imu_to_camera_link"
+          args="0 0 0 0.5 -0.5 0.5 0.5 imu camera_link"/>
   </group>
 
   <!-- ===================================================================== -->
