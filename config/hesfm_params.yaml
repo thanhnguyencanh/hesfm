@@ -186,9 +186,10 @@ primitives:
 kernel:
   # Length scale bounds (Mahalanobis units = multiples of std-dev, NOT meters).
   # d_M = 1 means one sigma from centroid. Euclidean influence = length_scale * sigma.
-  # With sigma~0.3m (typical cluster): min=1.5 → 0.45m, max=3.0 → 0.9m Euclidean.
-  length_scale_min: 1.5
-  length_scale_max: 3.0
+  # With sigma~0.3m (typical cluster): min=0.8 → 0.24m, max=1.5 → 0.45m Euclidean.
+  # Keep min >= resolution/sigma so each primitive covers at least ~1 voxel.
+  length_scale_min: 0.8
+  length_scale_max: 1.5
   
   # Uncertainty gating
   uncertainty_threshold: 0.7   # Gate threshold (kernel=0 above this)
