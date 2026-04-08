@@ -49,7 +49,7 @@ public:
         setupSubscribers();
         setupPublishers();
         
-        ROS_IN O("Semantic Cloud Node initialized");
+        ROS_INFO("Semantic Cloud Node initialized");
         ROS_INFO("  Dataset:          %s (%d classes)", dataset_.c_str(), num_classes_);
         ROS_INFO("  Downsample factor: %d", downsample_factor_);
         ROS_INFO("  Min depth: %.2f m, Max depth: %.2f m", min_depth_, max_depth_);
