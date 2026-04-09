@@ -73,7 +73,7 @@ segmentation:
   # Model paths (relative to package)
   dformer_model_path: "models/dformer_large_sunrgbd.pth"
   esanet_model_path:  "models/esanet_r34_sunrgbd.pth"
-  esanet_trt_engine:  "models/esanet_r34_sunrgbd_fp16_v11.engine"
+  esanet_trt_engine:  "models/esanet_r34_sunrgbd_fp16.engine"
 
   # Performance options
   use_cuda: true
