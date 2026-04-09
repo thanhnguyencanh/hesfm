@@ -39,29 +39,31 @@
   </class>
   
   <!-- Semantic Cloud Nodelet -->
-  <class name="hesfm/SemanticCloudNodelet" 
-         type="hesfm::SemanticCloudNodelet" 
+  <class name="hesfm/SemanticCloudNodelet"
+         type="hesfm::SemanticCloudNodelet"
          base_class_type="nodelet::Nodelet">
     <description>
       Semantic Point Cloud Generator Nodelet
-      
-      Generates semantic point clouds from synchronized RGB-D images
-      and semantic segmentation labels.
-      
+
+      Generates semantic point clouds from depth + segmentation images.
+      Colors come from class palette (no RGB subscription needed).
+      Supports optional per-pixel uncertainty via 3-topic or 2-topic sync.
+
       Subscriptions:
-        - color/image_raw (sensor_msgs/Image): RGB image
         - depth/image_rect_raw (sensor_msgs/Image): Depth image
-        - semantic/image (sensor_msgs/Image): Semantic labels
         - color/camera_info (sensor_msgs/CameraInfo): Camera intrinsics
-      
+        - semantic/image (sensor_msgs/Image): Semantic labels
+        - semantic/uncertainty (sensor_msgs/Image): Per-pixel uncertainty (optional)
+
       Publications:
         - semantic_cloud (sensor_msgs/PointCloud2): Semantic point cloud
-      
+
       Parameters:
         - downsample_factor (int, default: 2): Downsampling factor
-        - min_depth (double, default: 0.1): Minimum depth in meters
+        - min_depth (double, default: 0.06): Minimum depth in meters
         - max_depth (double, default: 6.0): Maximum depth in meters
-        - num_classes (int, default: 40): Number of semantic classes
+        - use_uncertainty (bool, default: true): Subscribe to uncertainty topic
+        - default_uncertainty (double, default: 0.3): Fallback when uncertainty disabled
     </description>
   </class>
   
