@@ -14,7 +14,7 @@ Date: 2026
 import sys
 import os
 import time
-from threading import Lock
+import threading
 
 import rospy
 import numpy as np
@@ -23,15 +23,7 @@ import cv2
 from sensor_msgs.msg import Image
 from std_msgs.msg import Header
 from cv_bridge import CvBridge, CvBridgeError
-from dynamic_reconfigure.server import Server
 
-try:
-    from hesfm.cfg import SemanticSegmentationConfig
-    HAS_DYNRECONF = True
-except ImportError:
-    HAS_DYNRECONF = False
-
-# Try importing deep learning frameworks
 try:
     import torch
     import torch.nn.functional as F
@@ -46,62 +38,15 @@ try:
     if not hasattr(np, 'float'):  np.float  = float
     import tensorrt as trt
     import pycuda.driver as cuda
-    cuda.init()  # explicit init — do NOT use pycuda.autoinit (creates non-primary context)
+    cuda.init()
     HAS_TRT = True
 except (ImportError, AttributeError):
     HAS_TRT = False
 
 
-class NYUv2ColorPalette:
-    """NYUv2 40-class color palette for visualization."""
-    
-    COLORS = np.array([
-        [128, 128, 128],  # wall
-        [139, 119, 101],  # floor
-        [244, 164, 96],   # cabinet
-        [255, 182, 193],  # bed
-        [255, 215, 0],    # chair
-        [220, 20, 60],    # sofa
-        [255, 140, 0],    # table
-        [139, 69, 19],    # door
-        [135, 206, 235],  # window
-        [160, 82, 45],    # bookshelf
-        [255, 105, 180],  # picture
-        [0, 128, 128],    # counter
-        [210, 180, 140],  # blinds
-        [70, 130, 180],   # desk
-        [188, 143, 143],  # shelves
-        [147, 112, 219],  # curtain
-        [222, 184, 135],  # dresser
-        [255, 228, 225],  # pillow
-        [192, 192, 192],  # mirror
-        [139, 119, 101],  # floor_mat
-        [128, 0, 128],    # clothes
-        [245, 245, 245],  # ceiling
-        [139, 90, 43],    # books
-        [173, 216, 230],  # fridge
-        [0, 0, 139],      # television
-        [255, 255, 224],  # paper
-        [240, 255, 255],  # towel
-        [176, 224, 230],  # shower_curtain
-        [210, 105, 30],   # box
-        [255, 255, 255],  # whiteboard
-        [255, 0, 0],      # person
-        [85, 107, 47],    # night_stand
-        [255, 255, 240],  # toilet
-        [176, 196, 222],  # sink
-        [255, 250, 205],  # lamp
-        [224, 255, 255],  # bathtub
-        [75, 0, 130],     # bag
-        [169, 169, 169],  # otherstructure
-        [105, 105, 105],  # otherfurniture
-        [128, 128, 0],    # otherprop
-    ], dtype=np.uint8)
-    
-    @classmethod
-    def colorize(cls, labels):
-        """Convert label image to RGB using vectorized numpy indexing."""
-        return cls.COLORS[np.clip(labels, 0, len(cls.COLORS) - 1)]
+# Explicit color for compact remap fallback class: "other"
+# Keep this distinct from wall gray for clear visualization.
+OTHER_CLASS_COLOR = np.array([255, 165, 0], dtype=np.uint8)  # yellow-orange
 
 
 class SUNRGBDColorPalette:
@@ -109,20 +54,20 @@ class SUNRGBDColorPalette:
 
     # Index 0 in CLASS_COLORS is void — skip it; classes 1-37 map to indices 0-36
     COLORS = np.array([
-        [119, 119, 119],  # wall
-        [244, 243, 131],  # floor
-        [137,  28, 157],  # cabinet
+        [119, 119, 119],  # wall (gray)
+        [244, 243, 131],  # floor (yellow)
+        [137,  28, 157],  # cabinet (purple)
         [150, 255, 255],  # bed
-        [ 54, 114, 113],  # chair
+        [ 54, 114, 113],  # chair (teal)
         [  0,   0, 176],  # sofa
-        [255,  69,   0],  # table
-        [ 87, 112, 255],  # door
-        [  0, 163,  33],  # window
+        [255,  69,   0],  # table (orange)
+        [ 87, 112, 255],  # door (blue)
+        [  0, 163,  33],  # window (green)
         [255, 150, 255],  # bookshelf
         [255, 180,  10],  # picture
         [101,  70,  86],  # counter
         [ 38, 230,   0],  # blinds
-        [255, 120,  70],  # desk
+        [255, 120,  70],  # desk (salmon)
         [117,  41, 121],  # shelves
         [150, 255,   0],  # curtain
         [132,   0, 255],  # dresser
@@ -130,16 +75,16 @@ class SUNRGBDColorPalette:
         [191, 130,  35],  # mirror
         [219, 200, 109],  # floor_mat
         [154,  62,  86],  # clothes
-        [255, 190, 190],  # ceiling
+        [255, 190, 190],  # ceiling (pink)
         [255,   0, 255],  # books
         [152, 163,  55],  # fridge
-        [192,  79, 212],  # television
-        [230, 230, 230],  # paper
+        [192,  79, 212],  # television (violet)
+        [230, 230, 230],  # paper (gray)
         [ 53, 130,  64],  # towel
         [155, 249, 152],  # shower_curtain
         [ 87,  64,  34],  # box
         [214, 209, 175],  # whiteboard
-        [170,   0,  59],  # person
+        [170,   0,  59],  # person (red)
         [255,   0,   0],  # night_stand
         [193, 195, 234],  # toilet
         [ 70,  72, 115],  # sink
@@ -156,22 +101,11 @@ class SUNRGBDColorPalette:
 
 class BaseSegmentationBackend:
     """Base class for segmentation backends."""
-    
+
     def __init__(self, config):
-        self.config = config
         self.num_classes = config.get('num_classes', 40)
         self.input_height = config.get('input_height', 480)
         self.input_width = config.get('input_width', 640)
-        self.publish_probabilities = config.get('publish_probabilities', False)
-        
-    def preprocess(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def infer(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def postprocess(self, *args, **kwargs):
-        raise NotImplementedError
 
 
 class DFormerBackend(BaseSegmentationBackend):
@@ -185,9 +119,6 @@ class DFormerBackend(BaseSegmentationBackend):
 
     def __init__(self, config):
         super().__init__(config)
-
-        if not HAS_TORCH:
-            raise RuntimeError("PyTorch required for DFormer backend")
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.fp16   = config.get('fp16', False) and self.device.type == 'cuda'
@@ -276,34 +207,28 @@ class DFormerBackend(BaseSegmentationBackend):
 
         return rgb_tensor, dep_tensor
 
-    def infer(self, rgb, depth=None):
-        """Run DFormer inference and return (labels, probs, uncertainty)."""
+    def infer(self, rgb, depth=None, need_uncertainty=False):
+        """Run DFormer inference and return (labels, uncertainty)."""
         original_size = rgb.shape[:2]
         rgb_tensor, dep_tensor = self.preprocess(rgb, depth)
 
         with torch.no_grad():
             output = self.model(rgb_tensor, dep_tensor)  # (1, C, H, W) logits
 
-        return self.postprocess(output, original_size)
-
-    def postprocess(self, output, original_size):
-        """Convert DFormer logits to labels, probs, uncertainty."""
         probs = F.softmax(output.float(), dim=1)
-        labels = torch.argmax(probs, dim=1)
-        entropy = -torch.sum(probs * torch.log(probs + 1e-10), dim=1)
-        uncertainty = (entropy / np.log(self.num_classes)).squeeze().cpu().numpy()
+        labels = torch.argmax(probs, dim=1).squeeze().cpu().numpy().astype(np.uint8)
 
-        labels_np = labels.squeeze().cpu().numpy().astype(np.uint8)
         h, w = original_size
-        labels_np  = cv2.resize(labels_np,  (w, h), interpolation=cv2.INTER_NEAREST)
-        uncertainty = cv2.resize(uncertainty, (w, h), interpolation=cv2.INTER_LINEAR)
+        labels = cv2.resize(labels, (w, h), interpolation=cv2.INTER_NEAREST)
 
-        probs_np = None
-        if self.publish_probabilities:
-            probs_np = probs.squeeze().permute(1, 2, 0).cpu().numpy()
-            probs_np = cv2.resize(probs_np, (w, h), interpolation=cv2.INTER_LINEAR)
+        if need_uncertainty:
+            entropy = -torch.sum(probs * torch.log(probs + 1e-10), dim=1)
+            uncertainty = (entropy / np.log(self.num_classes)).squeeze().cpu().numpy()
+            uncertainty = cv2.resize(uncertainty, (w, h), interpolation=cv2.INTER_LINEAR)
+        else:
+            uncertainty = None
 
-        return labels_np, probs_np, uncertainty
+        return labels, uncertainty
 
 
 class ESANetPyTorchBackend(BaseSegmentationBackend):
@@ -311,10 +236,7 @@ class ESANetPyTorchBackend(BaseSegmentationBackend):
     
     def __init__(self, config):
         super().__init__(config)
-        
-        if not HAS_TORCH:
-            raise RuntimeError("PyTorch required for ESANet backend")
-            
+                  
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.fp16 = config.get('fp16', True) and self.device.type == 'cuda'
         
@@ -426,14 +348,11 @@ class ESANetPyTorchBackend(BaseSegmentationBackend):
                 
         return rgb_tensor, depth_tensor
         
-    def infer(self, rgb, depth=None):
-        """Run ESANet inference."""
+    def infer(self, rgb, depth=None, need_uncertainty=False):
+        """Run ESANet inference and return (labels, uncertainty)."""
         if self.model is None:
             h, w = rgb.shape[:2]
-            labels = np.zeros((h, w), dtype=np.uint8)
-            probs = np.ones((h, w, self.num_classes), dtype=np.float32) / self.num_classes
-            uncertainty = np.ones((h, w), dtype=np.float32) * 0.5
-            return labels, probs, uncertainty
+            return np.zeros((h, w), dtype=np.uint8), None
 
         rgb_tensor, depth_tensor = self.preprocess(rgb, depth)
 
@@ -447,30 +366,22 @@ class ESANetPyTorchBackend(BaseSegmentationBackend):
 
         with torch.no_grad():
             output = self.model(rgb_tensor, depth_tensor)
-        return self.postprocess(output, rgb.shape[:2])
-        
-    def postprocess(self, output, original_size):
-        """Postprocess ESANet output."""
+
         # Cast to float32 before softmax to avoid fp16 overflow
         probs = F.softmax(output.float(), dim=1)
-        labels = torch.argmax(probs, dim=1)
+        labels = torch.argmax(probs, dim=1).squeeze().cpu().numpy().astype(np.uint8)
 
-        entropy = -torch.sum(probs * torch.log(probs + 1e-10), dim=1)
-        max_entropy = np.log(self.num_classes)
-        uncertainty = entropy / max_entropy
-        
-        labels = labels.squeeze().cpu().numpy().astype(np.uint8)
-        uncertainty = uncertainty.squeeze().cpu().float().numpy()
-        if self.publish_probabilities:
-            probs = probs.squeeze().permute(1, 2, 0).cpu().float().numpy()
-        else:
-            probs = None
-
-        h, w = original_size
+        h, w = rgb.shape[:2]
         labels = cv2.resize(labels, (w, h), interpolation=cv2.INTER_NEAREST)
-        uncertainty = cv2.resize(uncertainty, (w, h), interpolation=cv2.INTER_LINEAR)
-        
-        return labels, probs, uncertainty
+
+        if need_uncertainty:
+            entropy = -torch.sum(probs * torch.log(probs + 1e-10), dim=1)
+            uncertainty = (entropy / np.log(self.num_classes)).squeeze().cpu().float().numpy()
+            uncertainty = cv2.resize(uncertainty, (w, h), interpolation=cv2.INTER_LINEAR)
+        else:
+            uncertainty = None
+
+        return labels, uncertainty
 
 
 class ESANetTensorRTBackend(BaseSegmentationBackend):
@@ -483,9 +394,6 @@ class ESANetTensorRTBackend(BaseSegmentationBackend):
 
     def __init__(self, config):
         super().__init__(config)
-
-        if not HAS_TRT:
-            raise RuntimeError("TensorRT required for ESANet TRT backend")
 
         self.engine_path = config.get('engine_path', '')
 
@@ -518,6 +426,7 @@ class ESANetTensorRTBackend(BaseSegmentationBackend):
 
         if os.path.exists(self.engine_path):
             self._load_engine()
+            self._setup_buffers()
         else:
             rospy.logwarn(f"TensorRT engine not found: {self.engine_path}")
 
@@ -557,15 +466,13 @@ class ESANetTensorRTBackend(BaseSegmentationBackend):
                     self.in_gpu.append(device_buf)
                     self.bindings.append(int(device_buf))
                 else:
-                    # Output: allocate as PyTorch CUDA tensor — TRT writes directly,
-                    # no GPU→CPU→GPU round-trip needed in postprocess
                     self.out_gpu_torch = torch.empty(
                         shape, dtype=_np_to_torch_dtype(dtype), device='cuda')
                     self.bindings.append(int(self.out_gpu_torch.data_ptr()))
         else:
             n_inputs = self.engine.num_bindings - 1
             for i in range(n_inputs):
-                shape_full = self.engine.get_binding_shape(i)    # e.g. (1,3,480,640)
+                shape_full = self.engine.get_binding_shape(i)
                 if first_input_shape is None:
                     first_input_shape = tuple(shape_full)
                 shape      = abs(trt.volume(shape_full))
@@ -583,7 +490,6 @@ class ESANetTensorRTBackend(BaseSegmentationBackend):
             self.bindings.append(int(self.out_gpu_torch.data_ptr()))
 
         # Derive H/W from the engine's actual first-input binding (N,C,H,W)
-        # This overrides whatever was passed in config and is always correct.
         if first_input_shape is not None and len(first_input_shape) == 4:
             self.input_height = int(first_input_shape[2])
             self.input_width  = int(first_input_shape[3])
@@ -593,83 +499,107 @@ class ESANetTensorRTBackend(BaseSegmentationBackend):
                       f"{len(self.in_cpu)} input(s), "
                       f"input shape {self.input_height}x{self.input_width}")
 
-    def preprocess(self, rgb, depth=None):
-        """Preprocess BGR image and depth (metres) -> FP16 CHW arrays for TRT."""
-        # BGR->RGB — cv_bridge delivers BGR, ESANet was trained on RGB
-        rgb_resized = cv2.resize(rgb, (self.input_width, self.input_height))
-        rgb_rgb  = cv2.cvtColor(rgb_resized, cv2.COLOR_BGR2RGB)
-        rgb_norm = (rgb_rgb.astype(np.float32) / 255.0 - self.rgb_mean) / self.rgb_std
-        rgb_chw  = np.ascontiguousarray(rgb_norm.transpose(2, 0, 1), dtype=np.float16)
+    def _setup_buffers(self):
+        """Pre-allocate reusable buffers to avoid per-frame numpy allocations."""
+        H, W = self.input_height, self.input_width
 
-        # Depth: depth_callback stores metres -> convert to mm.
-        # Fall back to zeros when depth is unavailable.
-        if depth is not None:
-            depth_resized = cv2.resize(depth, (self.input_width, self.input_height),
-                                       interpolation=cv2.INTER_NEAREST)
-            depth_mm   = depth_resized * 1000.0
-            depth_norm = (depth_mm.astype(np.float32) - self.depth_mean) / self.depth_std
-            depth_chw  = np.ascontiguousarray(depth_norm[np.newaxis], dtype=np.float16)
-        else:
-            depth_chw = np.zeros((1, self.input_height, self.input_width), dtype=np.float16)
+        # Shaped views into pagelocked input buffers — write directly, skip np.copyto
+        self._rgb_pl = self.in_cpu[0].reshape(3, H, W)
+        if len(self.in_cpu) > 1:
+            self._dep_pl = self.in_cpu[1].reshape(1, H, W)
 
-        return rgb_chw, depth_chw
+        # Reusable float32 scratch for normalization (avoids 4-6 temp arrays per frame)
+        self._rgb_f32 = np.empty((H, W, 3), dtype=np.float32)
+        self._dep_f32 = np.empty((H, W),    dtype=np.float32)
 
-    def infer(self, rgb, depth=None):
-        """Run TRT inference: async H2D -> execute -> async D2H -> sync."""
+        # Fused normalization: (x/255 - mean) / std  =  x * scale + offset
+        self._rgb_scale  = (1.0 / (255.0 * self.rgb_std)).astype(np.float32)   # shape (3,)
+        self._rgb_offset = (-self.rgb_mean / self.rgb_std).astype(np.float32)  # shape (3,)
+
+        # Depth: (depth_m * 1000 - mean) / std  =  depth_m * k + b
+        self._dep_k = np.float32(1000.0 / self.depth_std)
+        self._dep_b = np.float32(-self.depth_mean / self.depth_std)
+
+        # Pre-computed constant for entropy normalization
+        self._log_C = np.float32(np.log(self.num_classes))
+
+        rospy.loginfo(f"TRT buffers: rgb_f32 {self._rgb_f32.shape}, "
+                      f"dep_f32 {self._dep_f32.shape}")
+
+    def _preprocess_into_buffers(self, rgb, depth):
+        """Normalize and write directly into pagelocked input buffers (zero extra copies)."""
+        H, W = self.input_height, self.input_width
+
+        # --- RGB ---
+        if rgb.shape[0] != H or rgb.shape[1] != W:
+            rgb = cv2.resize(rgb, (W, H))
+        rgb_rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
+
+        # Fused normalize into pre-allocated float32 scratch
+        self._rgb_f32[:] = rgb_rgb                 # uint8 → float32
+        self._rgb_f32 *= self._rgb_scale           # in-place
+        self._rgb_f32 += self._rgb_offset          # in-place
+
+        # HWC→CHW + float32→float16 directly into pagelocked buffer
+        self._rgb_pl[0] = self._rgb_f32[:, :, 0]
+        self._rgb_pl[1] = self._rgb_f32[:, :, 1]
+        self._rgb_pl[2] = self._rgb_f32[:, :, 2]
+
+        # --- Depth ---
+        if len(self.in_cpu) > 1:
+            if depth is not None:
+                if depth.shape[0] != H or depth.shape[1] != W:
+                    depth = cv2.resize(depth, (W, H), interpolation=cv2.INTER_NEAREST)
+                np.multiply(depth, self._dep_k, out=self._dep_f32)
+                self._dep_f32 += self._dep_b
+                self._dep_pl[0] = self._dep_f32    # float32 → float16
+            else:
+                self._dep_pl[:] = 0
+
+    def infer(self, rgb, depth=None, need_uncertainty=False):
+        """Run TRT inference: preprocess → H2D → execute → postprocess."""
         if self.engine is None:
             h, w = rgb.shape[:2]
-            labels      = np.zeros((h, w), dtype=np.uint8)
-            probs       = np.ones((h, w, self.num_classes), dtype=np.float32) / self.num_classes
-            uncertainty = np.ones((h, w), dtype=np.float32) * 0.5
-            return labels, probs, uncertainty
+            return np.zeros((h, w), dtype=np.uint8), None
 
-        rgb_chw, depth_chw = self.preprocess(rgb, depth)
+        # Preprocess writes directly into pagelocked buffers — no intermediate allocs
+        self._preprocess_into_buffers(rgb, depth)
 
-        # Copy inputs into page-locked host buffers then DMA to GPU
-        np.copyto(self.in_cpu[0], rgb_chw.ravel())
-        if len(self.in_cpu) > 1:
-            np.copyto(self.in_cpu[1], depth_chw.ravel())
-
+        # DMA to GPU
         for h_buf, d_buf in zip(self.in_cpu, self.in_gpu):
             cuda.memcpy_htod_async(d_buf, h_buf, self.stream)
 
         self.context.execute_async_v2(bindings=self.bindings,
                                       stream_handle=self.stream.handle)
-
-        # No GPU→CPU copy — out_gpu_torch is a PyTorch CUDA tensor TRT writes into
         self.stream.synchronize()
 
-        return self.postprocess(self.out_gpu_torch, rgb.shape[:2])
-
-    def postprocess(self, output, original_size):
-        """Reshape flat TRT output -> labels, probs, uncertainty.
-
-        output is a PyTorch CUDA tensor (TRT writes directly into it).
-        No GPU→CPU→GPU round-trip needed.
-        """
+        # Postprocess on GPU — out_gpu_torch already contains TRT output
         with torch.no_grad():
-            logits_t  = output.reshape(
-                self.num_classes, self.input_height, self.input_width
-            ).float()                                         # fp16 → fp32 on GPU
-            log_probs = torch.log_softmax(logits_t, dim=0)   # (C, H, W)
-            probs_t   = torch.exp(log_probs)                  # (C, H, W)
-            labels    = probs_t.argmax(dim=0).byte().cpu().numpy()        # (H, W)
-            entropy   = -(probs_t * log_probs).sum(dim=0).cpu().numpy()   # (H, W)
-            
-            if self.publish_probabilities:
-                probs = probs_t.cpu().numpy().transpose(1, 2, 0)          # (H, W, C)
+            logits = self.out_gpu_torch.reshape(
+                self.num_classes, self.input_height, self.input_width)
+
+            if need_uncertainty:
+                # Need fp32 for log_softmax numerical precision
+                log_probs = torch.log_softmax(logits.float(), dim=0)
+                probs = log_probs.exp()                                     # compute once
+                labels = probs.argmax(dim=0).byte().cpu().numpy()
+                entropy = -(probs * log_probs).sum(dim=0).cpu().numpy()
+                uncertainty = np.clip(
+                    entropy / self._log_C, 0.0, 1.0
+                ).astype(np.float32)
             else:
-                probs = None
+                # argmax works fine on fp16 — skip .float() conversion
+                labels = logits.argmax(dim=0).byte().cpu().numpy()
+                uncertainty = None
 
-        uncertainty = np.clip(
-            entropy / np.log(self.num_classes), 0.0, 1.0
-        ).astype(np.float32)
+        # Resize output only if camera resolution differs from engine resolution
+        h, w = rgb.shape[:2]
+        if h != self.input_height or w != self.input_width:
+            labels = cv2.resize(labels, (w, h), interpolation=cv2.INTER_NEAREST)
+            if uncertainty is not None:
+                uncertainty = cv2.resize(uncertainty, (w, h), interpolation=cv2.INTER_LINEAR)
 
-        h, w = original_size
-        labels      = cv2.resize(labels,      (w, h), interpolation=cv2.INTER_NEAREST)
-        uncertainty = cv2.resize(uncertainty, (w, h), interpolation=cv2.INTER_LINEAR)
-
-        return labels, probs, uncertainty
+        return labels, uncertainty
 
 
 class SemanticSegmentationNode:
@@ -679,22 +609,39 @@ class SemanticSegmentationNode:
         rospy.init_node('semantic_segmentation_node', anonymous=False)
         
         self.bridge = CvBridge()
-        self.lock = Lock()
         
         # Load parameters
         self.backend_name = rospy.get_param('~backend', 'dformer')
-        self.num_classes = rospy.get_param('~num_classes', 40)
+        # network_num_classes: the number of classes the TRT/PyTorch model outputs.
+        # This must match the compiled engine — never the remapped compact count.
+        esanet_dataset_tmp = rospy.get_param('~esanet_dataset', 'sunrgbd')
+        default_net_classes = 37 if esanet_dataset_tmp == 'sunrgbd' else 40
+        self.num_classes = rospy.get_param('~network_num_classes', default_net_classes)
         self.input_height = rospy.get_param('~input_height', 480)
         self.input_width = rospy.get_param('~input_width', 640)
-        self.confidence_threshold = rospy.get_param('~confidence_threshold', 0.3)
-        self.publish_color = rospy.get_param('~publish_color', True)
-        self.publish_probabilities = rospy.get_param('~publish_probabilities', False)
-        self.publish_uncertainty = rospy.get_param('~publish_uncertainty', True)
+        self.publish_color = rospy.get_param('~publish_color', False)
+        self.publish_uncertainty = rospy.get_param('~publish_uncertainty', False)
         
-        # Dataset used to train the ESANet checkpoint ('nyuv2' or 'sunrgbd')
-        self.esanet_dataset = rospy.get_param('~esanet_dataset', 'nyuv2')
+        # Class remapping: relevant classes → compact indices, rest → "other".
+        # Read from the hesfm_mapper_node namespace where hesfm_params.yaml is loaded.
+        relevant_list = rospy.get_param('/hesfm_mapper_node/navigation/relevant_classes', [])
+        if relevant_list:
+            sorted_relevant = sorted(relevant_list)
+            other_idx = len(sorted_relevant)  # last index = "other"
+            self.remap_lut = np.full(256, other_idx, dtype=np.uint8)
+            for new_idx, old_idx in enumerate(sorted_relevant):
+                self.remap_lut[old_idx] = new_idx
+            # Build compact color palette from original SUNRGBD palette + "other"
+            compact_colors = [SUNRGBDColorPalette.COLORS[i] for i in sorted_relevant]
+            compact_colors.append(OTHER_CLASS_COLOR)
+            self.compact_palette = np.array(compact_colors, dtype=np.uint8)
+            rospy.loginfo(f"Class remap: {len(sorted_relevant)} relevant + 1 other = {other_idx + 1} classes")
+        else:
+            self.remap_lut = None
+            self.compact_palette = None
 
-        # Model paths
+        # ESANet dataset & model paths
+        self.esanet_dataset = rospy.get_param('~esanet_dataset', 'sunrgbd')
         self.dformer_model_path = rospy.get_param('~dformer_model_path', '')
         self.esanet_model_path = rospy.get_param('~esanet_model_path', '')
         self.esanet_trt_engine = rospy.get_param('~esanet_trt_engine', '')
@@ -702,29 +649,33 @@ class SemanticSegmentationNode:
         # Initialize backend
         self.backend = self._create_backend()
         
-        # Cached images
+        # Cached images — written by callbacks, read by inference thread
         self.rgb_image = None
         self.depth_image = None
         self.rgb_stamp = None
-        
+        self._frame_lock = threading.Lock()
+        self._new_frame  = threading.Event()
+
+        # Pre-allocated depth float32 buffer (avoid per-frame astype allocation)
+        self._depth_f32 = np.zeros((self.input_height, self.input_width), dtype=np.float32)
+
         # Publishers
         self.semantic_pub = rospy.Publisher('~semantic_image', Image, queue_size=1)
         self.semantic_color_pub = rospy.Publisher('~semantic_color', Image, queue_size=1)
         self.uncertainty_pub = rospy.Publisher('~uncertainty', Image, queue_size=1)
-        
-        # Subscribers
-        self.rgb_sub = rospy.Subscriber('color/image_raw', Image, self.rgb_callback, queue_size=1)
 
-        self.depth_sub = rospy.Subscriber('depth/image_rect_raw', Image, self.depth_callback, queue_size=1)
-        
-        # Dynamic reconfigure
-        if HAS_DYNRECONF:
-            self.dyn_srv = Server(SemanticSegmentationConfig, self.dyn_callback)
-            
+        # Subscribers
+        self.rgb_sub   = rospy.Subscriber('color/image_raw',        Image, self.rgb_callback,   queue_size=1)
+        self.depth_sub = rospy.Subscriber('depth/image_rect_raw',   Image, self.depth_callback, queue_size=1)
+
         # Stats
-        self.frame_count = 0
-        self.total_time = 0.0
-        
+        # self.frame_count = 0
+        # self.total_time = 0.0
+
+        # Inference runs in a dedicated thread — callbacks never block
+        self._infer_thread = threading.Thread(target=self._infer_loop, daemon=True)
+        self._infer_thread.start()
+
         rospy.loginfo(f"Semantic Segmentation Node initialized with {self.backend_name} backend")
         
     def _create_backend(self):
@@ -734,7 +685,6 @@ class SemanticSegmentationNode:
             'input_height': self.input_height,
             'input_width': self.input_width,
             'fp16': True,
-            'publish_probabilities': self.publish_probabilities,
         }
         
         if self.backend_name == 'dformer':
@@ -748,88 +698,97 @@ class SemanticSegmentationNode:
             config['engine_path'] = self.esanet_trt_engine
             config['dataset'] = self.esanet_dataset
             return ESANetTensorRTBackend(config)
-        elif self.backend_name == 'auto':
-            # Auto-select based on hardware
-            if HAS_TRT and os.path.exists(self.esanet_trt_engine):
-                config['engine_path'] = self.esanet_trt_engine
-                return ESANetTensorRTBackend(config)
-            elif HAS_TORCH:
-                config['model_path'] = self.dformer_model_path
-                return DFormerBackend(config)
-            else:
-                raise RuntimeError("No suitable backend available")
         else:
             raise ValueError(f"Unknown backend: {self.backend_name}")
             
-    def dyn_callback(self, config, _level):
-        """Dynamic reconfigure callback."""
-        with self.lock:
-            self.confidence_threshold = config.confidence_threshold
-            self.publish_color = config.publish_color
-            self.publish_uncertainty = config.publish_uncertainty
-        return config
-        
     def rgb_callback(self, msg):
-        """RGB image callback."""
+        """Store latest RGB frame and signal the inference thread."""
         try:
-            self.rgb_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-            self.rgb_stamp = msg.header.stamp
-            self.process()
+            img = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+            with self._frame_lock:
+                self.rgb_image = img
+                self.rgb_stamp = msg.header.stamp
+            self._new_frame.set()
         except CvBridgeError as e:
             rospy.logerr(f"CV Bridge error: {e}")
-            
+
     def depth_callback(self, msg):
-        """Depth image callback."""
+        """Store latest depth frame (float32, metres)."""
         try:
             if msg.encoding == '16UC1':
-                self.depth_image = self.bridge.imgmsg_to_cv2(msg, '16UC1').astype(np.float32) * 0.001
+                raw = self.bridge.imgmsg_to_cv2(msg, '16UC1')
+                # Write into pre-allocated buffer — avoid extra allocation
+                np.multiply(raw, np.float32(0.001), out=self._depth_f32
+                            if raw.shape == self._depth_f32.shape
+                            else np.empty(raw.shape, dtype=np.float32))
+                with self._frame_lock:
+                    self.depth_image = self._depth_f32
             elif msg.encoding == '32FC1':
-                self.depth_image = self.bridge.imgmsg_to_cv2(msg, '32FC1')
+                with self._frame_lock:
+                    self.depth_image = self.bridge.imgmsg_to_cv2(msg, '32FC1')
             else:
-                self.depth_image = self.bridge.imgmsg_to_cv2(msg)
+                with self._frame_lock:
+                    self.depth_image = self.bridge.imgmsg_to_cv2(msg)
         except CvBridgeError as e:
             rospy.logerr(f"CV Bridge error: {e}")
-            
-    def process(self):
-        """Process current frame."""
-        if self.rgb_image is None:
-            return
 
-        # Snapshot shared images under lock; run GPU inference outside it
-        with self.lock:
-            rgb   = self.rgb_image
-            depth = self.depth_image
-            stamp = self.rgb_stamp
+    def _infer_loop(self):
+        """Inference thread: wait for a new RGB frame, then run the full pipeline."""
+        while not rospy.is_shutdown():
+            if not self._new_frame.wait(timeout=0.5):
+                continue
+            self._new_frame.clear()
+
+            with self._frame_lock:
+                rgb   = self.rgb_image
+                depth = self.depth_image
+                stamp = self.rgb_stamp
+
+            if rgb is None:
+                continue
+
+            self.process(rgb, depth, stamp)
+
+    def process(self, rgb, depth, stamp):
+        """Process one frame (called from inference thread)."""
+        need_unc = self.publish_uncertainty and self.uncertainty_pub.get_num_connections() > 0
 
         start_time = time.time()
-        labels, _, uncertainty = self.backend.infer(rgb, depth)
+        labels, uncertainty = self.backend.infer(rgb, depth, need_uncertainty=need_unc)
         elapsed = time.time() - start_time
 
-        self.total_time += elapsed
-        self.frame_count += 1
-        if self.frame_count % 90 == 0:
-            # rospy.loginfo(f"Segmentation FPS: {self.frame_count / self.total_time:.1f}")
+        # Remap to compact class set if configured
+        if self.remap_lut is not None:
+            labels = self.remap_lut[labels]
+
+        # self.total_time += elapsed
+        # self.frame_count += 1
+        # if self.frame_count % 90 == 0:
+        #     rospy.loginfo(f"Segmentation FPS: {self.frame_count / self.total_time:.1f}")
 
         # Create header
         header = Header()
         header.stamp = stamp
         header.frame_id = "camera_color_optical_frame"
 
-        # Publish semantic labels
+        # Publish semantic labels (remapped)
         semantic_msg = self.bridge.cv2_to_imgmsg(labels, encoding='mono8')
         semantic_msg.header = header
         self.semantic_pub.publish(semantic_msg)
 
-        # Publish colored visualization
-        if self.publish_color:
-            palette = (SUNRGBDColorPalette if self.esanet_dataset == 'sunrgbd'
-                       else NYUv2ColorPalette)
-            colored_msg = self.bridge.cv2_to_imgmsg(palette.colorize(labels), encoding='rgb8')
+        # Publish colored visualization only when needed.
+        # Colorization allocates a full RGB image, so skip it if nobody subscribes.
+        if self.publish_color and self.semantic_color_pub.get_num_connections() > 0:
+            if self.compact_palette is not None:
+                colored = self.compact_palette[np.clip(labels, 0, len(self.compact_palette) - 1)]
+            else:
+                colored = SUNRGBDColorPalette.colorize(labels)
+            colored_msg = self.bridge.cv2_to_imgmsg(colored, encoding='rgb8')
             colored_msg.header = header
             self.semantic_color_pub.publish(colored_msg)
 
-        # Publish uncertainty
-        if self.publish_uncertainty:
+        # Publish uncertainty only when needed.
+        if need_unc and uncertainty is not None:
             uncertainty_uint8 = (np.clip(uncertainty, 0.0, 1.0) * 255).astype(np.uint8)
             uncertainty_msg = self.bridge.cv2_to_imgmsg(uncertainty_uint8, encoding='mono8')
             uncertainty_msg.header = header

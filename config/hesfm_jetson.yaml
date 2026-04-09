@@ -75,7 +75,7 @@ segmentation:
 
   # Minimal outputs
   publish_color: false
-  publish_probabilities: false
+  publish_probabilities: true
   publish_uncertainty: true
 
 # -----------------------------------------------------------------------------

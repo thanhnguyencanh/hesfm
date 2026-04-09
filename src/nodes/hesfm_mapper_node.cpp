@@ -31,6 +31,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/PointField.h>
+#include <algorithm>
 #include <nav_msgs/OccupancyGrid.h>
 #include <nav_msgs/Odometry.h>
 #include <visualization_msgs/MarkerArray.h>
@@ -111,8 +112,8 @@ private:
         // Dataset for class colors
         std::string dataset;
         pnh_.param<std::string>("esanet_dataset", dataset, "sunrgbd");
-        class_colors_ = (dataset == "nyuv2") ? hesfm::NYUV2_CLASS_COLORS
-                                              : hesfm::SUNRGBD_CLASS_COLORS;
+        const auto& dataset_colors = (dataset == "nyuv2") ? hesfm::NYUV2_CLASS_COLORS
+                                    : hesfm::SUNRGBD_CLASS_COLORS;
 
         // Map parameters — YAML nested under "map/"
         pnh_.param("map/resolution",   config_.map.resolution,   0.05);
@@ -164,6 +165,33 @@ private:
         // Traversable classes
         std::vector<int> traversable_default = {1, 19};  // floor, floor_mat (SUNRGBD)
         pnh_.param("navigation/traversable_classes", traversable_classes_, traversable_default);
+
+        // Relevant classes filter — empty means map all classes
+        std::vector<int> relevant_default = {};
+        pnh_.param("navigation/relevant_classes", relevant_classes_, relevant_default);
+        // Build set for O(1) lookup
+        relevant_set_.insert(relevant_classes_.begin(), relevant_classes_.end());
+
+        // Build a compact class color palette when remapping is enabled.
+        // This keeps colors consistent with semantic_segmentation_node remap:
+        // relevant old indices -> [0..N-1], and "other" -> N (orange).
+        if (!relevant_classes_.empty()) {
+            std::vector<int> sorted_relevant = relevant_classes_;
+            std::sort(sorted_relevant.begin(), sorted_relevant.end());
+
+            class_colors_.clear();
+            class_colors_.reserve(sorted_relevant.size() + 1);
+            for (int old_idx : sorted_relevant) {
+                if (old_idx >= 0 && old_idx < static_cast<int>(dataset_colors.size())) {
+                    class_colors_.push_back(dataset_colors[old_idx]);
+                } else {
+                    class_colors_.push_back({255, 165, 0});
+                }
+            }
+            class_colors_.push_back({255, 165, 0});  // other
+        } else {
+            class_colors_ = dataset_colors;
+        }
     }
     
     void initializeHESFM() {
@@ -270,8 +298,8 @@ private:
             publishUncertaintyCloud(points, msg->header);
         }
 
-        // Store current primitives for visualization
-        current_primitives_ = pipeline_->getPrimitiveBuilder().buildPrimitives(points);
+        // Store current primitives for visualization (reuse from process() — no recompute)
+        current_primitives_ = pipeline_->getLastPrimitives();
         
         // Update timing statistics
         double processing_time = (ros::Time::now() - start_time).toSec() * 1000.0;
@@ -392,7 +420,7 @@ private:
             sp.is_traversable = (std::find(traversable_classes_.begin(),
                                            traversable_classes_.end(),
                                            sp.semantic_class) != traversable_classes_.end());
-            
+
             points.push_back(sp);
         }
         
@@ -657,6 +685,8 @@ private:
     std::string map_frame_;
     std::string sensor_frame_;
     std::vector<int> traversable_classes_;
+    std::vector<int> relevant_classes_;
+    std::set<int> relevant_set_;
     std::vector<std::array<uint8_t, 3>> class_colors_;
     
     // Statistics

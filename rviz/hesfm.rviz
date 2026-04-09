@@ -8,6 +8,7 @@ Panels:
         - /TF1/Frames1
         - /TF1/Tree1
         - /SemanticMap1
+        - /Primitives1
       Splitter Ratio: 0.5
     Tree Height: 407
   - Class: rviz/Selection
@@ -25,7 +26,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: ColorImage
+    SyncSource: Image Tracks
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -170,12 +171,12 @@ Visualization Manager:
       Class: rviz/Map
       Color Scheme: costmap
       Draw Behind: false
-      Enabled: true
+      Enabled: false
       Name: Costmap
       Topic: /costmap
       Unreliable: false
       Use Timestamp: false
-      Value: true
+      Value: false
     - Class: rviz/Image
       Enabled: true
       Image Topic: /semantic_segmentation_node/uncertainty
@@ -407,7 +408,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 4.515602111816406
+      Distance: 2.7459983825683594
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -415,17 +416,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -0.45773687958717346
-        Y: 0.2312849760055542
-        Z: 1.73545503616333
+        X: 0.023839205503463745
+        Y: -0.8942189812660217
+        Z: 1.1722078323364258
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.04479663074016571
+      Pitch: 0.2697966992855072
       Target Frame: <Fixed Frame>
-      Yaw: 3.9804000854492188
+      Yaw: 4.31040096282959
     Saved: ~
 Window Geometry:
   ColorImage:

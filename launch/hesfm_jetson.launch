@@ -52,6 +52,7 @@
   <!-- TensorRT engine path -->
   <arg name="trt_engine" default="$(find hesfm)/models/esanet_r34_sunrgbd_fp16.engine"/>
   <arg name="esanet_dataset" default="sunrgbd"/>
+  <arg name="config_file" default="$(find hesfm)/config/hesfm_jetson.yaml"/>
   
   <!-- Features -->
   <arg name="launch_exploration" default="false"/>
@@ -59,6 +60,10 @@
   <arg name="semantic_cloud" default="true"/>
   <arg name="launch_mapper" default="false"/>
   <arg name="rviz" default="true"/>
+
+    <!-- Preload mapper namespace params so segmentation/cloud can read
+      navigation/relevant_classes even when mapper starts later or is disabled. -->
+    <rosparam file="$(arg config_file)" command="load" ns="hesfm_mapper_node"/>
   
   <!-- ===================================================================== -->
   <!-- Intel RealSense D455 (optimized settings) -->

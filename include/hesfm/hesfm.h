@@ -81,14 +81,21 @@ public:
     int process(std::vector<SemanticPoint>& points, const Vector3d& sensor_origin) {
         // Step 1: Compute uncertainties
         uncertainty_decomposer_.processPointCloud(points, sensor_origin);
-        
-        // Step 2: Build primitives
-        auto primitives = primitive_builder_.buildPrimitives(points);
-        
+
+        // Step 2: Build primitives (cache result — avoids double K-means in node)
+        last_primitives_ = primitive_builder_.buildPrimitives(points);
+
         // Step 3: Update map
-        semantic_map_.update(primitives, kernel_);
-        
-        return static_cast<int>(primitives.size());
+        semantic_map_.update(last_primitives_, kernel_);
+
+        return static_cast<int>(last_primitives_.size());
+    }
+
+    /**
+     * @brief Return primitives from the most recent process() call (no recompute)
+     */
+    const std::vector<GaussianPrimitive>& getLastPrimitives() const {
+        return last_primitives_;
     }
     
     /**
@@ -148,6 +155,7 @@ private:
     AdaptiveKernel kernel_;
     SemanticMap semantic_map_;
     ExplorationPlanner exploration_planner_;
+    std::vector<GaussianPrimitive> last_primitives_;
 };
 
 } // namespace hesfm

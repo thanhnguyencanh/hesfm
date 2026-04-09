@@ -40,7 +40,8 @@
 
   <!-- Processing options -->
   <arg name="downsample_factor" default="2"/>
-  <arg name="num_classes" default="37"/>
+  <!-- 13 = 12 office-relevant classes + 1 "other" (remapped from 37) -->
+  <arg name="num_classes" default="13"/>
   
   <!-- Map parameters -->     
   <arg name="resolution" default="0.05"/>
@@ -52,11 +53,11 @@
   <arg name="launch_camera" default="true"/>
   <arg name="launch_segmentation" default="true"/>
   <arg name="semantic_cloud" default="true"/>
-  <arg name="launch_mapper" default="true"/>
+  <arg name="launch_mapper" default="false"/>
   <arg name="launch_costmap" default="false"/>
   <arg name="launch_visualization" default="false"/>
-  <arg name="rviz" default="true"/>
   <arg name="launch_costmap_3d" default="false"/>
+  <arg name="rviz" default="true"/>  
 
   <!-- OpenVINS VIO (ov_msckf) -->
   <arg name="launch_ov_msckf"   default="true"/>
@@ -66,6 +67,10 @@
   
   <!-- Config file -->
   <arg name="config_file" default="$(find hesfm)/config/hesfm_params.yaml"/>
+
+    <!-- Preload mapper namespace params so segmentation/cloud can read
+      navigation/relevant_classes even when mapper starts later or is disabled. -->
+    <rosparam file="$(arg config_file)" command="load" ns="hesfm_mapper_node"/>
   
   <!-- ===================================================================== -->
   <!-- Intel RealSense D455 Camera -->
@@ -114,6 +119,10 @@
       <param name="dformer_model_path" value="$(find hesfm)/models/dformer_large_sunrgbd.pth"/>
       <param name="esanet_model_path" value="$(find hesfm)/models/esanet_r34_sunrgbd.pth"/>
       <param name="esanet_trt_engine" value="$(find hesfm)/models/esanet_r34_sunrgbd_fp16.engine"/>
+
+      <!-- Output options -->
+      <param name="publish_color" value="true"/>
+      <param name="publish_uncertainty" value="true"/>
     </node>
   </group>
   
@@ -132,12 +141,14 @@
       
       <!-- Parameters -->
       <param name="downsample_factor" value="$(arg downsample_factor)"/>
-      <param name="min_depth" value="0.06"/>
-      <param name="max_depth" value="6.0"/>
+      <param name="min_depth" value="0.1"/>
+      <param name="max_depth" value="5.0"/>
       <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
       <param name="default_uncertainty" value="0.3"/>
       <param name="queue_size" value="30"/>
       <param name="output_frame" value="camera_accel_optical_frame"/>
+      <!-- Compact class palette — must match segmentation node remap -->
+      <rosparam param="relevant_classes">[0, 1, 2, 4, 6, 7, 8, 13, 21, 24, 25, 30]</rosparam>
     </node>
   </group>
   

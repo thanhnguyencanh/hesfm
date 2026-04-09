@@ -49,7 +49,7 @@
   <!-- Output options -->
   <arg name="publish_color" default="true"/>
   <arg name="publish_probabilities" default="true"/>
-  <arg name="publish_uncertainty" default="true"/>
+  <arg name="publish_uncertainty" default="false"/>
   
   <!-- Visualization -->
   <arg name="visualize" default="false"/>
@@ -129,10 +129,6 @@
           args="-d $(find hesfm)/rviz/hesfm.rviz"
           output="screen"/>
   </group>
-
-  <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz" 
-          args="-d $(find hesfm)/rviz/hesfm.rviz"
-          output="screen"/>
   
   <!-- ===================================================================== -->
   <!-- Performance Monitor -->

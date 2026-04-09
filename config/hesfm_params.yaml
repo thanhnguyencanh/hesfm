@@ -36,8 +36,8 @@ map:
   origin_y: -10.0
   origin_z: -0.5
   
-  # Number of semantic classes (SUNRGBD: 37)
-  num_classes: 37
+  # Number of semantic classes (13 = 12 office-relevant + 1 "other", remapped from SUNRGBD 37)
+  num_classes: 13
 
   # Log-odds bounds for numerical stability
   log_odds_min: -10.0
@@ -73,7 +73,7 @@ segmentation:
   # Model paths (relative to package)
   dformer_model_path: "models/dformer_large_sunrgbd.pth"
   esanet_model_path:  "models/esanet_r34_sunrgbd.pth"
-  esanet_trt_engine:  "models/esanet_r34_sunrgbd_fp16.engine"
+  esanet_trt_engine:  "models/esanet_r34_sunrgbd_fp16_v11.engine"
 
   # Performance options
   use_cuda: true
@@ -82,8 +82,8 @@ segmentation:
 
   # Output options
   publish_color: true
-  publish_probabilities: false
-  publish_uncertainty: true
+  publish_probabilities: true
+  publish_uncertainty: false
 
   # SUNRGBD 37-class names (source: ESANet/src/datasets/sunrgbd/sunrgbd.py)
   class_names:
@@ -154,9 +154,9 @@ uncertainty:
 # -----------------------------------------------------------------------------
 primitives:
   # Target number of primitives per frame.
-  # Reference systems (vBKI) use raw points directly; 128 clusters compress ~300k points
-  # into 128 representatives. Increase for denser coverage at cost of CPU.
-  target_primitives: 512
+  # 256 primitives compress a dense cloud into compact representatives.
+  # Reduce to 128 on Jetson or if CPU is still bottlenecked.
+  target_primitives: 128
   
   # Minimum points required to form a primitive
   min_points_per_primitive: 5
@@ -176,20 +176,21 @@ primitives:
   # Uncertainty weighting in clustering
   uncertainty_weight_lambda: 1.0
   
-  # K-means parameters
-  kmeans_max_iter: 100
-  kmeans_tolerance: 0.0001
+  # K-means parameters — 30 iterations is sufficient for real-time; convergence
+  # is typically reached in <15 iterations with K-means++ initialization.
+  kmeans_max_iter: 30
+  kmeans_tolerance: 0.001
 
 # -----------------------------------------------------------------------------
 # Adaptive Kernel Configuration
 # -----------------------------------------------------------------------------
 kernel:
-  # Length scale bounds (Mahalanobis units = multiples of std-dev, NOT meters).
-  # d_M = 1 means one sigma from centroid. Euclidean influence = length_scale * sigma.
-  # With sigma~0.3m (typical cluster): min=0.8 → 0.24m, max=1.5 → 0.45m Euclidean.
-  # Keep min >= resolution/sigma so each primitive covers at least ~1 voxel.
-  length_scale_min: 0.8
-  length_scale_max: 1.5
+  # Length scale bounds (Mahalanobis units).
+  # Euclidean influence = length_scale * sigma_cluster.
+  # min=0.5, max=1.0 keeps each primitive within ~2-3 voxels radius (~27 voxels).
+  # Previous values (0.8/1.5) were causing ~729 voxels per primitive (the big blocks).
+  length_scale_min: 0.5
+  length_scale_max: 1.0
   
   # Uncertainty gating
   uncertainty_threshold: 0.7   # Gate threshold (kernel=0 above this)
@@ -226,52 +227,38 @@ navigation:
   # Minimum confidence for cost assignment
   min_confidence: 0.3
   
-  # Traversable classes (floor=1, floor_mat=19)
-  traversable_classes: [1, 19]
-  
-  # Obstacle classes
-  obstacle_classes: [0, 3, 4, 5, 6, 7, 8, 9, 13, 14, 16, 23, 24, 30, 32, 33, 35]
-  
-  # Per-class semantic costs [0-100]
-  # Lower = more traversable, Higher = more obstacle-like
+  # --- Compact remapped class indices (13 classes) ---
+  # Remap: old → new:
+  #   0=wall→0  1=floor→1  2=cabinet→2  4=chair→3  6=table→4
+  #   7=door→5  8=window→6  13=desk→7  21=ceiling→8  24=television→9
+  #   25=paper→10  30=person→11  *=other→12
+  #
+  # Original SUN RGB-D indices used by the segmentation LUT.
+  # The segmentation node reads this list and builds the remap table.
+  relevant_classes: [0, 1, 2, 4, 6, 7, 8, 13, 21, 24, 25, 30]
+
+  # Traversable (remapped): floor=1
+  traversable_classes: [1]
+
+  # Obstacle (remapped): wall=0, cabinet=2, chair=3, table=4, door=5,
+  #   window=6, desk=7, television=9, person=11, other=12
+  obstacle_classes: [0, 2, 3, 4, 5, 6, 7, 9, 11, 12]
+
+  # Per-class semantic costs (remapped indices)
   semantic_costs:
-    "0":  80   # wall
-    "1":  0    # floor (traversable)
-    "2":  80   # cabinet
-    "3":  90   # bed
-    "4":  85   # chair
-    "5":  90   # sofa
-    "6":  80   # table
-    "7":  70   # door (semi-traversable)
-    "8":  100  # window
-    "9":  70   # bookshelf
-    "10": 30   # picture
-    "11": 70   # counter
-    "12": 20   # blinds
-    "13": 80   # desk
-    "14": 60   # shelves
-    "15": 10   # curtain
-    "16": 70   # dresser
-    "17": 10   # pillow
-    "18": 50   # mirror
-    "19": 0    # floor mat (traversable)
-    "20": 20   # clothes
-    "21": 0    # ceiling (irrelevant for ground robot)
-    "22": 30   # books
-    "23": 90   # fridge
-    "24": 90   # tv
-    "25": 10   # paper
-    "26": 10   # towel
-    "27": 20   # shower curtain
-    "28": 40   # box
-    "29": 50   # whiteboard
-    "30": 100  # person (dynamic obstacle)
-    "31": 70   # night stand
-    "32": 90   # toilet
-    "33": 80   # sink
-    "34": 30   # lamp
-    "35": 90   # bathtub
-    "36": 30   # bag
+    "0":  80    # wall
+    "1":  0     # floor (traversable)
+    "2":  80    # cabinet
+    "3":  85    # chair
+    "4":  80    # table
+    "5":  70    # door (semi-traversable)
+    "6":  100   # window
+    "7":  80    # desk
+    "8":  0     # ceiling (overhead, not obstacle for ground robot)
+    "9":  90    # television
+    "10": 10    # paper
+    "11": 100   # person (dynamic obstacle)
+    "12": 50    # other (unknown — moderate cost)
 
 # -----------------------------------------------------------------------------
 # Exploration Configuration
@@ -334,7 +321,7 @@ sensor:
 # -----------------------------------------------------------------------------
 processing:
   # Publishing rates (Hz)
-  map_publish_rate: 2.0
+  map_publish_rate: 1.0
   costmap_publish_rate: 5.0
   primitive_publish_rate: 10.0
   
@@ -370,6 +357,8 @@ visualization:
   uncertainty_colormap: "jet"
   
   # Class colors (RGB, 0-255) — source: ESANet/src/datasets/sunrgbd/sunrgbd.py CLASS_COLORS[1:]
+  # In remapped 13-class mode, colors are compacted from navigation/relevant_classes
+  # and the final class index ("other") is explicitly set to [255, 165, 0].
   class_colors:
     "0":  [119, 119, 119]   # wall
     "1":  [244, 243, 131]   # floor
