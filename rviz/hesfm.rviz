@@ -8,7 +8,6 @@ Panels:
         - /TF1/Frames1
         - /TF1/Tree1
         - /SemanticMap1
-        - /Primitives1
       Splitter Ratio: 0.5
     Tree Height: 407
   - Class: rviz/Selection
@@ -160,13 +159,13 @@ Visualization Manager:
       Use rainbow: true
       Value: true
     - Class: rviz/MarkerArray
-      Enabled: true
+      Enabled: false
       Marker Topic: /primitives
       Name: Primitives
       Namespaces:
-        primitives: true
+        {}
       Queue Size: 100
-      Value: true
+      Value: false
     - Alpha: 0.699999988079071
       Class: rviz/Map
       Color Scheme: costmap
@@ -201,7 +200,7 @@ Visualization Manager:
       Color: 255; 255; 255
       Color Transformer: Intensity
       Decay Time: 0
-      Enabled: true
+      Enabled: false
       Invert Rainbow: false
       Max Color: 255; 0; 0
       Min Color: 0; 255; 0
@@ -216,7 +215,7 @@ Visualization Manager:
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
-      Value: true
+      Value: false
     - Class: rviz/Image
       Enabled: false
       Image Topic: /camera/color/image_raw
@@ -408,7 +407,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 2.7459983825683594
+      Distance: 14.176908493041992
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -416,17 +415,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 0.023839205503463745
-        Y: -0.8942189812660217
-        Z: 1.1722078323364258
+        X: 2.079352617263794
+        Y: -0.807602047920227
+        Z: 0.4918850362300873
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.2697966992855072
+      Pitch: 0.39979633688926697
       Target Frame: <Fixed Frame>
-      Yaw: 4.31040096282959
+      Yaw: 2.280397891998291
     Saved: ~
 Window Geometry:
   ColorImage:

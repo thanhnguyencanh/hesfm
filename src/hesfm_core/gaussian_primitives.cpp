@@ -43,28 +43,21 @@ std::vector<GaussianPrimitive> GaussianPrimitiveBuilder::buildPrimitives(
     std::vector<Vector3d> centroids;
     std::vector<int> assignments = uncertaintyWeightedKMeans(points, k, centroids);
     
-    // Build primitive for each cluster
+    // Single-pass bucket fill: O(N) instead of O(N*K) scan per cluster
+    std::vector<std::vector<int>> buckets(k);
+    for (int c = 0; c < k; ++c) buckets[c].reserve(points.size() / k + 16);
+    for (size_t i = 0; i < assignments.size(); ++i) {
+        buckets[assignments[i]].push_back(static_cast<int>(i));
+    }
+
     std::vector<GaussianPrimitive> primitives;
     primitives.reserve(k);
-    
+
     for (int c = 0; c < k; ++c) {
-        // Gather indices of points in this cluster
-        std::vector<int> cluster_indices;
-        for (size_t i = 0; i < assignments.size(); ++i) {
-            if (assignments[i] == c) {
-                cluster_indices.push_back(static_cast<int>(i));
-            }
-        }
-        
-        // Skip if too few points
-        if (cluster_indices.size() < static_cast<size_t>(config_.min_points_per_primitive)) {
+        if (buckets[c].size() < static_cast<size_t>(config_.min_points_per_primitive)) {
             continue;
         }
-        
-        // Compute primitive
-        GaussianPrimitive prim = computePrimitive(points, cluster_indices);
-        
-        // Filter by conflict
+        GaussianPrimitive prim = computePrimitive(points, buckets[c]);
         if (prim.conflict < config_.conflict_threshold) {
             primitives.push_back(prim);
         }
@@ -129,13 +122,19 @@ std::vector<GaussianPrimitive> GaussianPrimitiveBuilder::updatePrimitives(
             prim.centroid = (prim.centroid * prim.total_weight + 
                             new_points[i].position * weight) / total_weight;
             
-            // Update class probabilities via DST fusion
+            // Update class probabilities via DST fusion (materialize point probs on demand)
+            const SemanticPoint& np = new_points[i];
+            std::vector<double> np_probs(config_.num_classes,
+                (1.0 - np.semantic_confidence) / std::max(config_.num_classes - 1, 1));
+            if (np.semantic_class >= 0 && np.semantic_class < config_.num_classes) {
+                np_probs[np.semantic_class] = np.semantic_confidence;
+            }
             double conflict;
             prim.class_probabilities = dstFusion(
                 prim.class_probabilities,
-                new_points[i].class_probabilities,
+                np_probs,
                 prim.uncertainty,
-                new_points[i].uncertainty_total,
+                np.uncertainty_total,
                 conflict);
             prim.conflict = std::max(prim.conflict, conflict);
             
@@ -402,20 +401,16 @@ std::vector<int> GaussianPrimitiveBuilder::uncertaintyWeightedKMeans(
     
     // Iterative refinement
     for (int iter = 0; iter < config_.kmeans_max_iter; ++iter) {
-        // Assignment step
+        // Assignment step — parallelized, read-only on centroids
+        #pragma omp parallel for schedule(static)
         for (size_t i = 0; i < points.size(); ++i) {
+            const double w = 1.0 + config_.uncertainty_weight_lambda
+                             * points[i].uncertainty_total;
             double min_d = std::numeric_limits<double>::max();
             int best_c = 0;
-            
             for (int c = 0; c < k; ++c) {
-                double d = (points[i].position - centroids[c]).squaredNorm();
-                // Weight by uncertainty
-                d *= (1.0 + config_.uncertainty_weight_lambda * points[i].uncertainty_total);
-                
-                if (d < min_d) {
-                    min_d = d;
-                    best_c = c;
-                }
+                double d = (points[i].position - centroids[c]).squaredNorm() * w;
+                if (d < min_d) { min_d = d; best_c = c; }
             }
             assignments[i] = best_c;
         }
@@ -626,8 +621,16 @@ GaussianPrimitive GaussianPrimitiveBuilder::computePrimitive(
     all_uncertainties.reserve(indices.size());
     
     for (int idx : indices) {
-        all_probs.push_back(points[idx].class_probabilities);
-        all_uncertainties.push_back(points[idx].uncertainty_semantic);
+        const SemanticPoint& pt = points[idx];
+        // Materialize compact (class_id + confidence) → full distribution on demand.
+        // Background = (1 - confidence) / (num_classes - 1) for all other classes.
+        std::vector<double> probs(config_.num_classes,
+            (1.0 - pt.semantic_confidence) / std::max(config_.num_classes - 1, 1));
+        if (pt.semantic_class >= 0 && pt.semantic_class < config_.num_classes) {
+            probs[pt.semantic_class] = pt.semantic_confidence;
+        }
+        all_probs.push_back(std::move(probs));
+        all_uncertainties.push_back(pt.uncertainty_semantic);
     }
     
     prim.class_probabilities = dstFusionMultiple(all_probs, all_uncertainties, prim.conflict);

@@ -14,12 +14,9 @@
  * 
  * Publications:
  *   - semantic_map (sensor_msgs/PointCloud2): 3D semantic map
- *   - costmap (nav_msgs/OccupancyGrid): 2D navigation costmap
  *   - primitives (visualization_msgs/MarkerArray): Gaussian primitives
- *   - uncertainty_info (hesfm/UncertaintyInfo): Uncertainty statistics
- *   - semantic_costmap_3d (visualization_msgs/MarkerArray): 3D semantic costmap [NEW]
- *   - semantic_costmap_2d (nav_msgs/OccupancyGrid): 2D semantic costmap [NEW]
- *   - traversability_cloud (sensor_msgs/PointCloud2): Traversability visualization [NEW]
+ *   - uncertainty_map (sensor_msgs/PointCloud2): Per-cell uncertainty
+ *   - uncertainty_cloud (sensor_msgs/PointCloud2): Per-point uncertainty decomposition
  *
  * Services:
  *   - get_semantic_map (hesfm/GetSemanticMap)
@@ -32,7 +29,6 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/PointField.h>
 #include <algorithm>
-#include <nav_msgs/OccupancyGrid.h>
 #include <nav_msgs/Odometry.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <geometry_msgs/TransformStamped.h>
@@ -51,25 +47,6 @@
 #include <dynamic_reconfigure/server.h>
 
 #include "hesfm/hesfm.h"
-
-// Custom point type for semantic point cloud
-struct PointXYZRGBLU {
-    PCL_ADD_POINT4D;
-    PCL_ADD_RGB;
-    uint32_t label;
-    float uncertainty;
-    float probabilities[40];
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-} EIGEN_ALIGN16;
-
-POINT_CLOUD_REGISTER_POINT_STRUCT(PointXYZRGBLU,
-    (float, x, x)
-    (float, y, y)
-    (float, z, z)
-    (float, rgb, rgb)
-    (uint32_t, label, label)
-    (float, uncertainty, uncertainty)
-)
 
 /**
  * @brief HESFM Mapper ROS Node
@@ -154,13 +131,8 @@ private:
         pnh_.param("kernel/uncertainty_threshold", config_.kernel.uncertainty_threshold,  0.75);
         pnh_.param("kernel/gamma",                 config_.kernel.gamma,                  2.0);
 
-        // Navigation parameters — YAML nested under "navigation/"
-        pnh_.param("navigation/costmap_height_min", config_.navigation.costmap_height_min, 0.0);
-        pnh_.param("navigation/costmap_height_max", config_.navigation.costmap_height_max, 0.5);
-
         // Processing parameters — YAML nested under "processing/"
         pnh_.param("processing/map_publish_rate",     config_.processing.map_publish_rate,     2.0);
-        pnh_.param("processing/costmap_publish_rate", config_.processing.costmap_publish_rate, 5.0);
 
         // Traversable classes
         std::vector<int> traversable_default = {1, 19};  // floor, floor_mat (SUNRGBD)
@@ -192,8 +164,13 @@ private:
         } else {
             class_colors_ = dataset_colors;
         }
+
+        // Optional visualization outputs (default off — enable via launch arg)
+        pnh_.param("publish_primitives",        publish_primitives_,       false);
+        pnh_.param("publish_uncertainty_map",   publish_uncertainty_map_,  false);
+        pnh_.param("publish_uncertainty_cloud", publish_uncertainty_cloud_, false);
     }
-    
+
     void initializeHESFM() {
         // Create HESFM pipeline
         pipeline_ = std::make_unique<hesfm::HESFMPipeline>(config_);
@@ -215,23 +192,21 @@ private:
     }
     
     void setupPublishers() {
-        // Semantic map publisher
         map_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("semantic_map", 1);
-        
-        // Costmap publisher
-        costmap_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>("costmap", 1);
-        
-        // Primitives visualization publisher
-        primitives_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("primitives", 1);
-        
-        // Uncertainty map publisher (from map cells)
-        uncertainty_map_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("uncertainty_map", 1);
 
-        // Per-point uncertainty decomposition cloud (from current observation)
-        // Fields: x,y,z + 5 floats (u_sem, u_spa, u_obs, u_temp, u_total)
-        uncertainty_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("uncertainty_cloud", 1);
+        if (publish_primitives_)
+            primitives_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("primitives", 1);
 
-        ROS_INFO("Publishers initialized");
+        if (publish_uncertainty_map_)
+            uncertainty_map_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("uncertainty_map", 1);
+
+        if (publish_uncertainty_cloud_)
+            uncertainty_cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("uncertainty_cloud", 1);
+
+        ROS_INFO("Publishers initialized (primitives=%s unc_map=%s unc_cloud=%s)",
+                 publish_primitives_ ? "on" : "off",
+                 publish_uncertainty_map_ ? "on" : "off",
+                 publish_uncertainty_cloud_ ? "on" : "off");
     }
     
     void setupServices() {
@@ -247,11 +222,6 @@ private:
         map_timer_ = nh_.createTimer(
             ros::Duration(1.0 / config_.processing.map_publish_rate),
             &HESFMMapperNode::mapPublishCallback, this);
-        
-        // Costmap publishing timer
-        costmap_timer_ = nh_.createTimer(
-            ros::Duration(1.0 / config_.processing.costmap_publish_rate),
-            &HESFMMapperNode::costmapPublishCallback, this);
     }
     
     // =========================================================================
@@ -293,13 +263,15 @@ private:
         // (this runs uncertainty_decomposer_.processPointCloud() which fills all 4 components)
         int num_primitives = pipeline_->process(points, sensor_origin);
 
-        // Publish per-point uncertainty decomposition cloud (after process() has filled all 4 components)
-        if (uncertainty_cloud_pub_.getNumSubscribers() > 0) {
+        // Publish per-point uncertainty decomposition cloud
+        if (publish_uncertainty_cloud_ && uncertainty_cloud_pub_.getNumSubscribers() > 0) {
             publishUncertaintyCloud(points, msg->header);
         }
 
-        // Store current primitives for visualization (reuse from process() — no recompute)
-        current_primitives_ = pipeline_->getLastPrimitives();
+        // Store primitives only if visualization is enabled
+        if (publish_primitives_) {
+            current_primitives_ = pipeline_->getLastPrimitives();
+        }
         
         // Update timing statistics
         double processing_time = (ros::Time::now() - start_time).toSec() * 1000.0;
@@ -310,13 +282,18 @@ private:
     }
     
     void mapPublishCallback(const ros::TimerEvent&) {
-        publishSemanticMap();
-        publishPrimitives();
-        publishUncertaintyMap();
-    }
-    
-    void costmapPublishCallback(const ros::TimerEvent&) {
-        publishCostmap();
+        // Snapshot once — shared by all publish methods that need cell data.
+        // Avoids duplicate getOccupiedCells() traversal + copy per method.
+        const bool need_cells = map_pub_.getNumSubscribers() > 0
+                             || uncertainty_map_pub_.getNumSubscribers() > 0;
+        std::vector<hesfm::MapCell> cells;
+        if (need_cells) {
+            cells = pipeline_->getMap().getOccupiedCells();
+        }
+
+        publishSemanticMap(cells);
+        if (publish_primitives_)       publishPrimitives();
+        if (publish_uncertainty_map_)  publishUncertaintyMap(cells);
     }
     
     bool resetMapCallback(std_srvs::Empty::Request& req,
@@ -407,15 +384,6 @@ private:
                 sp.b = rgb & 0xFF;
             }
             
-            // Initialize class probabilities (uniform if not provided)
-            sp.class_probabilities.resize(config_.map.num_classes, 
-                                          1.0 / config_.map.num_classes);
-            if (sp.semantic_class >= 0 && sp.semantic_class < config_.map.num_classes) {
-                // Set high probability for predicted class
-                std::fill(sp.class_probabilities.begin(), sp.class_probabilities.end(), 0.01);
-                sp.class_probabilities[sp.semantic_class] = 0.9;
-            }
-            
             // Check if traversable
             sp.is_traversable = (std::find(traversable_classes_.begin(),
                                            traversable_classes_.end(),
@@ -431,11 +399,8 @@ private:
     // Publishing
     // =========================================================================
     
-    void publishSemanticMap() {
-        if (map_pub_.getNumSubscribers() == 0) return;
-        
-        auto cells = pipeline_->getMap().getOccupiedCells();
-        if (cells.empty()) return;
+    void publishSemanticMap(const std::vector<hesfm::MapCell>& cells) {
+        if (map_pub_.getNumSubscribers() == 0 || cells.empty()) return;
         
         // Create point cloud
         pcl::PointCloud<pcl::PointXYZRGB> cloud;
@@ -467,31 +432,6 @@ private:
         msg.header.frame_id = map_frame_;
         
         map_pub_.publish(msg);
-    }
-    
-    void publishCostmap() {
-        if (costmap_pub_.getNumSubscribers() == 0) return;
-        
-        int width, height;
-        auto costmap_data = pipeline_->getCostmap(width, height);
-        
-        if (costmap_data.empty()) return;
-        
-        nav_msgs::OccupancyGrid msg;
-        msg.header.stamp = ros::Time::now();
-        msg.header.frame_id = map_frame_;
-        
-        msg.info.resolution = config_.map.resolution;
-        msg.info.width = width;
-        msg.info.height = height;
-        msg.info.origin.position.x = config_.map.origin_x;
-        msg.info.origin.position.y = config_.map.origin_y;
-        msg.info.origin.position.z = 0.0;
-        msg.info.origin.orientation.w = 1.0;
-        
-        msg.data = costmap_data;
-        
-        costmap_pub_.publish(msg);
     }
     
     void publishPrimitives() {
@@ -547,11 +487,8 @@ private:
         primitives_pub_.publish(markers);
     }
     
-    void publishUncertaintyMap() {
-        if (uncertainty_map_pub_.getNumSubscribers() == 0) return;
-        
-        auto cells = pipeline_->getMap().getOccupiedCells();
-        if (cells.empty()) return;
+    void publishUncertaintyMap(const std::vector<hesfm::MapCell>& cells) {
+        if (uncertainty_map_pub_.getNumSubscribers() == 0 || cells.empty()) return;
         
         pcl::PointCloud<pcl::PointXYZI> cloud;
         cloud.reserve(cells.size());
@@ -661,7 +598,6 @@ private:
     
     // Publishers
     ros::Publisher map_pub_;
-    ros::Publisher costmap_pub_;
     ros::Publisher primitives_pub_;
     ros::Publisher uncertainty_map_pub_;
     ros::Publisher uncertainty_cloud_pub_;
@@ -674,7 +610,6 @@ private:
     
     // Timers
     ros::Timer map_timer_;
-    ros::Timer costmap_timer_;
     
     // HESFM
     hesfm::HESFMConfig config_;
@@ -688,7 +623,12 @@ private:
     std::vector<int> relevant_classes_;
     std::set<int> relevant_set_;
     std::vector<std::array<uint8_t, 3>> class_colors_;
-    
+
+    // Visualization toggles
+    bool publish_primitives_        = false;
+    bool publish_uncertainty_map_   = false;
+    bool publish_uncertainty_cloud_ = false;
+
     // Statistics
     int total_frames_ = 0;
     size_t total_points_ = 0;

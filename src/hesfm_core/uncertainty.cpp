@@ -258,8 +258,6 @@ UncertaintyDecomposition UncertaintyDecomposer::decompose(
     } else if (!point.evidence.empty()) {
         result.semantic = computeSemanticUncertainty(point.evidence, 
                                                       static_cast<int>(point.evidence.size()));
-    } else if (!point.class_probabilities.empty()) {
-        result.semantic = computeSemanticUncertaintyFromProbs(point.class_probabilities);
     } else {
         result.semantic = 1.0;
     }
@@ -323,8 +321,6 @@ void UncertaintyDecomposer::processPointCloud(
         } else if (!pt.evidence.empty()) {
             u_sem = computeSemanticUncertainty(pt.evidence,
                                                static_cast<int>(pt.evidence.size()));
-        } else if (!pt.class_probabilities.empty()) {
-            u_sem = computeSemanticUncertaintyFromProbs(pt.class_probabilities);
         } else {
             u_sem = 1.0;
         }
@@ -334,8 +330,10 @@ void UncertaintyDecomposer::processPointCloud(
         int iy = static_cast<int>(std::floor(pt.position.y() * inv_radius));
         int iz = static_cast<int>(std::floor(pt.position.z() * inv_radius));
 
-        std::vector<SemanticPoint> neighbors;
-        neighbors.reserve(32);
+        // Collect neighbor indices — avoid copying full SemanticPoint objects.
+        // computeSpatialUncertainty only reads semantic_class, so an index is enough.
+        int neighbor_indices[128];
+        int nb_count = 0;
         for (int dx = -1; dx <= 1; ++dx) {
             for (int dy = -1; dy <= 1; ++dy) {
                 for (int dz = -1; dz <= 1; ++dz) {
@@ -343,16 +341,26 @@ void UncertaintyDecomposer::processPointCloud(
                     if (it == voxel_grid.end()) continue;
                     for (int j : it->second) {
                         if (j == static_cast<int>(i)) continue;
-                        if ((pt.position - points[j].position).norm()
-                                < config_.spatial_radius) {
-                            neighbors.push_back(points[j]);
+                        if ((pt.position - points[j].position).squaredNorm()
+                                < config_.spatial_radius * config_.spatial_radius) {
+                            if (nb_count < 128) neighbor_indices[nb_count++] = j;
                         }
                     }
                 }
             }
         }
 
-        double u_spa = computeSpatialUncertainty(pt, neighbors);
+        // Compute spatial uncertainty inline (only needs semantic_class + count)
+        double u_spa;
+        if (nb_count < config_.min_neighbors) {
+            u_spa = 1.0;
+        } else {
+            int same = 0;
+            for (int k = 0; k < nb_count; ++k) {
+                if (points[neighbor_indices[k]].semantic_class == pt.semantic_class) ++same;
+            }
+            u_spa = std::clamp(1.0 - static_cast<double>(same) / nb_count, 0.0, 1.0);
+        }
         double u_obs = computeObservationUncertainty(pt.position, sensor_origin);
 
         partial[i] = {u_sem, u_spa, u_obs};

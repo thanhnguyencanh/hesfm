@@ -555,15 +555,6 @@ private:
                 sp.b = rgb & 0xFF;
             }
             
-            // Initialize class probabilities (uniform if not provided)
-            sp.class_probabilities.resize(config_.map.num_classes, 
-                                          1.0 / config_.map.num_classes);
-            if (sp.semantic_class >= 0 && sp.semantic_class < config_.map.num_classes) {
-                // Set high probability for predicted class
-                std::fill(sp.class_probabilities.begin(), sp.class_probabilities.end(), 0.01);
-                sp.class_probabilities[sp.semantic_class] = 0.9;
-            }
-            
             // Check if traversable
             sp.is_traversable = (std::find(traversable_classes_.begin(),
                                            traversable_classes_.end(),
