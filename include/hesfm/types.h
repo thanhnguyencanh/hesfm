@@ -461,9 +461,11 @@ struct SemanticPoint {
     
     /// Predicted semantic class (0 to num_classes-1)
     int semantic_class = 0;
-    
-    /// Full class probability distribution
-    std::vector<double> class_probabilities;
+
+    /// Confidence for predicted class (replaces full class_probabilities vector).
+    /// Background probability = (1 - semantic_confidence) / (num_classes - 1).
+    /// Full distribution is materialized on demand in GaussianPrimitiveBuilder.
+    float semantic_confidence = 0.9f;
     
     /// Evidence values from EDL (optional, for computing semantic uncertainty)
     std::vector<double> evidence;

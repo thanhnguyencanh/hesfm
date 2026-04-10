@@ -53,14 +53,19 @@
   <arg name="launch_camera" default="true"/>
   <arg name="launch_segmentation" default="true"/>
   <arg name="semantic_cloud" default="true"/>
-  <arg name="launch_mapper" default="false"/>
+  <arg name="launch_mapper" default="true"/>
   <arg name="launch_costmap" default="false"/>
   <arg name="launch_visualization" default="false"/>
   <arg name="launch_costmap_3d" default="false"/>
   <arg name="rviz" default="true"/>
 
   <!-- Nodelet mode: run cloud + mapper in one process for zero-copy PointCloud2 -->
-  <arg name="use_nodelets" default="true"/>
+  <arg name="use_nodelets" default="false"/>
+
+  <!-- Optional visualisation outputs (disable on Jetson to save CPU/bandwidth) -->
+  <arg name="publish_primitives"       default="false"/>
+  <arg name="publish_uncertainty_map"  default="false"/>
+  <arg name="publish_uncertainty_cloud" default="false"/>
 
   <!-- OpenVINS VIO (ov_msckf) -->
   <arg name="launch_ov_msckf"   default="true"/>
@@ -186,13 +191,16 @@
           name="hesfm_mapper_node" pkg="hesfm" type="hesfm_mapper_node"
           output="screen" respawn="false">
       <rosparam file="$(arg config_file)" command="load"/>
-      <param name="map_frame"      value="$(arg map_frame)"/>
-      <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
-      <param name="resolution"     value="$(arg resolution)"/>
-      <param name="map_size_x"     value="$(arg map_size_x)"/>
-      <param name="map_size_y"     value="$(arg map_size_y)"/>
-      <param name="map_size_z"     value="$(arg map_size_z)"/>
-      <param name="num_classes"    value="$(arg num_classes)"/>
+      <param name="map_frame"                value="$(arg map_frame)"/>
+      <param name="esanet_dataset"           value="$(arg esanet_dataset)"/>
+      <param name="resolution"               value="$(arg resolution)"/>
+      <param name="map_size_x"               value="$(arg map_size_x)"/>
+      <param name="map_size_y"               value="$(arg map_size_y)"/>
+      <param name="map_size_z"               value="$(arg map_size_z)"/>
+      <param name="num_classes"              value="$(arg num_classes)"/>
+      <param name="publish_primitives"       value="$(arg publish_primitives)"/>
+      <param name="publish_uncertainty_map"  value="$(arg publish_uncertainty_map)"/>
+      <param name="publish_uncertainty_cloud" value="$(arg publish_uncertainty_cloud)"/>
     </node>
 
     <!-- Nodelet (zero-copy from cloud) -->
@@ -201,13 +209,16 @@
           args="load hesfm/HESFMMapperNodelet hesfm_manager"
           output="screen" respawn="false">
       <rosparam file="$(arg config_file)" command="load"/>
-      <param name="map_frame"      value="$(arg map_frame)"/>
-      <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
-      <param name="resolution"     value="$(arg resolution)"/>
-      <param name="map_size_x"     value="$(arg map_size_x)"/>
-      <param name="map_size_y"     value="$(arg map_size_y)"/>
-      <param name="map_size_z"     value="$(arg map_size_z)"/>
-      <param name="num_classes"    value="$(arg num_classes)"/>
+      <param name="map_frame"                value="$(arg map_frame)"/>
+      <param name="esanet_dataset"           value="$(arg esanet_dataset)"/>
+      <param name="resolution"               value="$(arg resolution)"/>
+      <param name="map_size_x"               value="$(arg map_size_x)"/>
+      <param name="map_size_y"               value="$(arg map_size_y)"/>
+      <param name="map_size_z"               value="$(arg map_size_z)"/>
+      <param name="num_classes"              value="$(arg num_classes)"/>
+      <param name="publish_primitives"       value="$(arg publish_primitives)"/>
+      <param name="publish_uncertainty_map"  value="$(arg publish_uncertainty_map)"/>
+      <param name="publish_uncertainty_cloud" value="$(arg publish_uncertainty_cloud)"/>
     </node>
   </group>
   

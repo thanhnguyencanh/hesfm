@@ -47,7 +47,7 @@ map:
   prior_prob: 0.027  # 1/37
   
   # Maximum number of cells (memory limit)
-  max_cells: 2000000
+  max_cells: 1500000
 
 # -----------------------------------------------------------------------------
 # Semantic Segmentation Configuration
@@ -156,7 +156,7 @@ primitives:
   # Target number of primitives per frame.
   # 256 primitives compress a dense cloud into compact representatives.
   # Reduce to 128 on Jetson or if CPU is still bottlenecked.
-  target_primitives: 128
+  target_primitives: 256
   
   # Minimum points required to form a primitive
   min_points_per_primitive: 5
@@ -171,15 +171,15 @@ primitives:
   
   # Covariance regularization — keeps eigenvalues ≥ this value.
   # Minimum to guarantee 1-cell Euclidean coverage: (resolution / length_scale_min)² = (0.05/0.1)² = 0.25
-  regularization: 0.01
+  regularization: 0.05
   
   # Uncertainty weighting in clustering
   uncertainty_weight_lambda: 1.0
   
   # K-means parameters — 30 iterations is sufficient for real-time; convergence
   # is typically reached in <15 iterations with K-means++ initialization.
-  kmeans_max_iter: 30
-  kmeans_tolerance: 0.001
+  kmeans_max_iter: 15
+  kmeans_tolerance: 0.01
 
 # -----------------------------------------------------------------------------
 # Adaptive Kernel Configuration
@@ -189,8 +189,8 @@ kernel:
   # Euclidean influence = length_scale * sigma_cluster.
   # min=0.5, max=1.0 keeps each primitive within ~2-3 voxels radius (~27 voxels).
   # Previous values (0.8/1.5) were causing ~729 voxels per primitive (the big blocks).
-  length_scale_min: 0.5
-  length_scale_max: 1.0
+  length_scale_min: 0.8
+  length_scale_max: 1.5
   
   # Uncertainty gating
   uncertainty_threshold: 0.7   # Gate threshold (kernel=0 above this)
