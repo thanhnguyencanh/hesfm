@@ -32,6 +32,27 @@
 
 #include "hesfm/types.h"
 
+namespace {
+
+template <typename T>
+void loadParamWithLegacyFallback(ros::NodeHandle& pnh,
+                                 const std::string& nested_name,
+                                 const std::string& legacy_name,
+                                 T& value,
+                                 const T& default_value) {
+    pnh.param(nested_name, value, default_value);
+    pnh.param(legacy_name, value, value);
+}
+
+bool getParamWithLegacyFallback(const ros::NodeHandle& pnh,
+                                const std::string& nested_name,
+                                const std::string& legacy_name,
+                                std::vector<int>& value) {
+    return pnh.getParam(nested_name, value) || pnh.getParam(legacy_name, value);
+}
+
+}  // namespace
+
 // Point layout in the output PointCloud2 (packed struct for direct memcpy)
 struct SemanticPoint {
     float    x, y, z;
@@ -77,13 +98,28 @@ private:
         base_class_colors_ = class_colors_;
         pnh_.param("num_classes", num_classes_, num_classes_);
 
-        pnh_.param("downsample_factor",  downsample_factor_, 2);
-        pnh_.param("min_depth",          min_depth_,         0.06);
-        pnh_.param("max_depth",          max_depth_,         6.0);
-        pnh_.param("queue_size",         queue_size_,        10);
-        pnh_.param("use_uncertainty",    use_uncertainty_,   true);
-        pnh_.param("default_uncertainty",default_uncertainty_, 0.3f);
-        pnh_.param<std::string>("output_frame", output_frame_, "");
+        loadParamWithLegacyFallback(
+            pnh_, "processing/downsample_factor", "downsample_factor", downsample_factor_, 2);
+        loadParamWithLegacyFallback(
+            pnh_, "sensor/min_range", "min_depth", min_depth_, 0.1);
+        loadParamWithLegacyFallback(
+            pnh_, "sensor/max_range", "max_depth", max_depth_, 5.0);
+        loadParamWithLegacyFallback(
+            pnh_, "processing/queue_size", "queue_size", queue_size_, 30);
+        loadParamWithLegacyFallback(
+            pnh_, "semantic_cloud/use_uncertainty", "use_uncertainty", use_uncertainty_, true);
+        loadParamWithLegacyFallback(
+            pnh_,
+            "semantic_cloud/default_uncertainty",
+            "default_uncertainty",
+            default_uncertainty_,
+            0.3f);
+        loadParamWithLegacyFallback(
+            pnh_,
+            "semantic_cloud/output_frame",
+            "output_frame",
+            output_frame_,
+            std::string("camera_accel_optical_frame"));
 
         tryConfigureCompactPalette();
     }
@@ -92,8 +128,10 @@ private:
         if (compact_palette_configured_) return true;
 
         std::vector<int> relevant;
-        if (!pnh_.getParam("relevant_classes", relevant))
+        if (!getParamWithLegacyFallback(
+                pnh_, "navigation/relevant_classes", "relevant_classes", relevant)) {
             nh_.getParam("/hesfm_mapper_node/navigation/relevant_classes", relevant);
+        }
         if (relevant.empty()) return false;
 
         std::sort(relevant.begin(), relevant.end());
@@ -268,15 +306,17 @@ private:
         const uint32_t num_cls = static_cast<uint32_t>(num_classes_);
 
         for (int v = 0; v < out_h; ++v) {
-            const uint8_t*  sem_row = sem_s.ptr<uint8_t>(v);
-            const uint8_t*  unc_row = has_unc ? unc_s.ptr<uint8_t>(v) : nullptr;
+            const uint8_t*   sem_row   = sem_s.ptr<uint8_t>(v);
+            const uint8_t*   unc_row   = has_unc ? unc_s.ptr<uint8_t>(v) : nullptr;
+            const uint16_t*  dep16_row = depth_is_16u ? depth_s.ptr<uint16_t>(v) : nullptr;
+            const float*     dep32_row = depth_is_16u ? nullptr : depth_s.ptr<float>(v);
 
             for (int u = 0; u < out_w; ++u) {
                 float d;
                 if (depth_is_16u)
-                    d = static_cast<float>(depth_s.at<uint16_t>(v, u)) * 0.001f;
+                    d = static_cast<float>(dep16_row[u]) * 0.001f;
                 else
-                    d = depth_s.at<float>(v, u);
+                    d = dep32_row[u];
 
                 if (d <= min_depth_ || d >= max_depth_ || !std::isfinite(d))
                     continue;

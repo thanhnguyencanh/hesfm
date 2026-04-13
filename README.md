@@ -302,7 +302,7 @@ hesfm/
 │   ├── gaussian_primitives.h   # Gaussian primitive builder
 │   ├── adaptive_kernel.h       # Adaptive anisotropic kernel
 │   ├── semantic_map.h          # Semantic map with log-odds update
-│   └── octree_map.h            # OcTree-based map storage
+│   └── hesfm.h                 # Pipeline convenience wrapper
 │
 ├── src/
 │   ├── hesfm_core/             # Core library implementations
@@ -330,15 +330,13 @@ hesfm/
 │
 ├── launch/                     # Launch files
 │   ├── hesfm.launch            # Main launch file
-│   ├── hesfm_d455.launch       # D455 camera configuration
+│   ├── d455_camera.launch      # D455 camera configuration
 │   ├── hesfm_navigation.launch # With navigation stack
-│   └── includes/               # Launch file includes
+│   └── hesfm_exploration.launch
 │
 ├── config/                     # Configuration files
-│   ├── hesfm_params.yaml       # Main parameters
-│   ├── uncertainty_params.yaml # Uncertainty weights
-│   ├── kernel_params.yaml      # Kernel parameters
-│   └── navigation_params.yaml  # Navigation parameters
+│   ├── hesfm_params.yaml       # Main runtime parameters
+│   └── benchmark_config.yaml   # Offline evaluation helper config
 │
 ├── rviz/                       # RViz configurations
 │   └── hesfm.rviz
@@ -354,11 +352,6 @@ hesfm/
 │   ├── QuerySemanticClass.srv
 │   ├── ResetMap.srv
 │   └── SaveMap.srv
-│
-├── cfg/                        # Dynamic reconfigure
-│   ├── HESFM.cfg
-│   ├── Uncertainty.cfg
-│   └── Kernel.cfg
 │
 ├── checkpoints/                # Model weights (download separately)
 │

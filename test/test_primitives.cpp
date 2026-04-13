@@ -39,9 +39,9 @@ protected:
                 spread * (static_cast<double>(rand()) / RAND_MAX - 0.5),
                 spread * (static_cast<double>(rand()) / RAND_MAX - 0.5));
             p.semantic_class = semantic_class;
+            p.semantic_confidence = 0.8f;
+            p.uncertainty_semantic = 0.2;
             p.uncertainty_total = 0.2;
-            p.class_probabilities.resize(40, 0.01);
-            p.class_probabilities[semantic_class] = 0.8;
             points.push_back(p);
         }
         return points;
@@ -102,8 +102,8 @@ TEST_F(PrimitivesTest, DSTFusion) {
     
     // Check DST conflict is computed
     for (const auto& prim : primitives) {
-        EXPECT_GE(prim.dst_conflict, 0.0);
-        EXPECT_LE(prim.dst_conflict, 1.0);
+        EXPECT_GE(prim.conflict, 0.0);
+        EXPECT_LE(prim.conflict, 1.0);
     }
 }
 
@@ -141,9 +141,9 @@ TEST_F(PrimitivesTest, UncertaintyWeighting) {
             static_cast<double>(rand()) / RAND_MAX,
             0);
         p.semantic_class = 1;
+        p.semantic_confidence = 0.8f;
+        p.uncertainty_semantic = 0.2;
         p.uncertainty_total = static_cast<double>(i) / 50.0;  // 0 to 1
-        p.class_probabilities.resize(40, 0.01);
-        p.class_probabilities[1] = 0.8;
         points.push_back(p);
     }
     
@@ -155,22 +155,26 @@ TEST_F(PrimitivesTest, UncertaintyWeighting) {
 }
 
 TEST_F(PrimitivesTest, IncrementalUpdate) {
+    config_.target_primitives = 1;
+    builder_ = std::make_unique<GaussianPrimitiveBuilder>(config_);
+
     auto initial_points = createCluster(Eigen::Vector3d(0, 0, 0), 0.3, 50, 1);
     auto primitives = builder_->buildPrimitives(initial_points);
     
     ASSERT_GT(primitives.size(), 0u);
     auto initial_centroid = primitives[0].centroid;
+    auto initial_id = primitives[0].id;
     
     // Add more points slightly offset
     auto new_points = createCluster(Eigen::Vector3d(0.5, 0, 0), 0.3, 50, 1);
     
-    // Update primitives
-    builder_->updatePrimitives(primitives, new_points);
+    // Incremental update should preserve the primitive identity while moving it
+    auto updated = builder_->updatePrimitives(primitives, new_points, 1.0);
     
     // Centroid should have moved
-    if (!primitives.empty()) {
-        EXPECT_GT((primitives[0].centroid - initial_centroid).norm(), 0.01);
-    }
+    ASSERT_GT(updated.size(), 0u);
+    EXPECT_EQ(updated[0].id, initial_id);
+    EXPECT_GT((updated[0].centroid - initial_centroid).norm(), 0.01);
 }
 
 TEST_F(PrimitivesTest, MergePrimitives) {
@@ -180,22 +184,23 @@ TEST_F(PrimitivesTest, MergePrimitives) {
     p1.covariance = Eigen::Matrix3d::Identity() * 0.1;
     p1.semantic_class = 1;
     p1.point_count = 30;
-    p1.evidence.resize(40, 0.1);
-    p1.evidence[1] = 2.0;
+    p1.total_weight = 30.0;
+    p1.uncertainty = 0.2;
+    p1.class_probabilities = {0.1, 0.8, 0.1};
     
     p2.centroid = Eigen::Vector3d(0.1, 0, 0);
     p2.covariance = Eigen::Matrix3d::Identity() * 0.1;
     p2.semantic_class = 1;
     p2.point_count = 20;
-    p2.evidence.resize(40, 0.1);
-    p2.evidence[1] = 1.5;
-    
-    std::vector<GaussianPrimitive> primitives = {p1, p2};
-    builder_->mergeSimilarPrimitives(primitives, 0.2);
+    p2.total_weight = 20.0;
+    p2.uncertainty = 0.2;
+    p2.class_probabilities = {0.1, 0.8, 0.1};
+
+    auto merged = builder_->mergePrimitives(p1, p2);
     
     // Should be merged into one
-    EXPECT_EQ(primitives.size(), 1u);
-    EXPECT_EQ(primitives[0].point_count, 50);
+    EXPECT_EQ(merged.point_count, 50);
+    EXPECT_EQ(merged.semantic_class, 1);
 }
 
 

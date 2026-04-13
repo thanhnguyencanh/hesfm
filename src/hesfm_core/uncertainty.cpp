@@ -117,7 +117,8 @@ double UncertaintyDecomposer::computeObservationUncertainty(
     // Component 1: Range-based uncertainty
     // Increases with distance from sensor
     double range = (point - sensor_origin).norm();
-    double u_range = config_.sigma_range * (range / sensor_model_.max_range);
+    const double max_range = std::max(sensor_model_.max_range, EPSILON);
+    double u_range = config_.sigma_range * (range / max_range);
     u_range = std::clamp(u_range, 0.0, 1.0);
     
     // Component 2: Density-based uncertainty
@@ -149,54 +150,49 @@ double UncertaintyDecomposer::computeObservationUncertainty(
 // Temporal Uncertainty
 // =============================================================================
 
-double UncertaintyDecomposer::computeTemporalUncertainty(
+// Internal version — caller must hold mutex_ (or guarantee single-threaded access).
+double UncertaintyDecomposer::computeTemporalUncertainty_nolock(
     const Vector3d& position,
     int current_class) {
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    temporal_clock_ += 1e-6;
 
-    // Advance the monotonic clock used for LRU eviction.
-    temporal_clock_ += 1e-6;  // tiny increment per call, overwritten by real time below
+    const size_t hash = spatialHash(position);
 
-    size_t hash = spatialHash(position);
-
-    // Get or create history for this location
     auto it = temporal_history_.find(hash);
     if (it == temporal_history_.end()) {
-        temporal_history_[hash] = TemporalHistory(DEFAULT_NUM_CLASSES);
+        temporal_history_.emplace(hash, TemporalHistory(DEFAULT_NUM_CLASSES));
         it = temporal_history_.find(hash);
     }
 
     TemporalHistory& history = it->second;
     history.last_access_time = temporal_clock_;
 
-    // Update class counts
-    if (current_class >= 0 && current_class < static_cast<int>(history.class_counts.size())) {
+    if (current_class >= 0 && current_class < static_cast<int>(history.class_counts.size()))
         history.class_counts[current_class]++;
-    }
     history.total_observations++;
 
-    // Need at least 2 observations for temporal analysis
-    if (history.total_observations < 2) {
-        return 0.5;  // Neutral uncertainty
-    }
+    if (history.total_observations < 2)
+        return 0.5;
 
-    // Find most frequent class
-    int max_count = *std::max_element(history.class_counts.begin(),
-                                       history.class_counts.end());
+    const int max_count = *std::max_element(history.class_counts.begin(),
+                                             history.class_counts.end());
+    const double consistency = static_cast<double>(max_count) /
+                                static_cast<double>(history.total_observations);
 
-    // Temporal consistency
-    double consistency = static_cast<double>(max_count) /
-                         static_cast<double>(history.total_observations);
-
-    // Periodically evict stale entries (every 10k accesses)
-    static int access_count = 0;
-    if (++access_count % 10000 == 0) {
+    // Evict stale entries every 10k accesses — counter is per-instance, not static
+    if (++temporal_access_count_ % 10000 == 0)
         evictStaleHistory();
-    }
 
-    // Uncertainty is inverse of consistency
     return std::clamp(1.0 - consistency, 0.0, 1.0);
+}
+
+double UncertaintyDecomposer::computeTemporalUncertainty(
+    const Vector3d& position,
+    int current_class) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    return computeTemporalUncertainty_nolock(position, current_class);
 }
 
 void UncertaintyDecomposer::evictStaleHistory() {
@@ -310,7 +306,7 @@ void UncertaintyDecomposer::processPointCloud(
     struct PartialResult { double u_sem, u_spa, u_obs; };
     std::vector<PartialResult> partial(num_points);
 
-    #pragma omp parallel for schedule(dynamic, 64)
+    #pragma omp parallel for schedule(static)
     for (size_t i = 0; i < num_points; ++i) {
         const SemanticPoint& pt = points[i];
 
@@ -367,12 +363,13 @@ void UncertaintyDecomposer::processPointCloud(
     }
 
     // ── Phase 2 (sequential): U_temp + total write-back ──────────────────────
-    // computeTemporalUncertainty() updates shared state — keep sequential.
+    // Single lock for the whole batch — avoids N per-point lock/unlock cycles.
     double sum_sem = 0, sum_spa = 0, sum_obs = 0, sum_temp = 0, sum_total = 0;
 
+    std::lock_guard<std::mutex> temp_lock(mutex_);
     for (size_t i = 0; i < num_points; ++i) {
-        double u_temp = computeTemporalUncertainty(points[i].position,
-                                                    points[i].semantic_class);
+        double u_temp = computeTemporalUncertainty_nolock(points[i].position,
+                                                           points[i].semantic_class);
         double u_total = computeTotalUncertainty(partial[i].u_sem, partial[i].u_spa,
                                                   partial[i].u_obs, u_temp);
 
@@ -389,13 +386,13 @@ void UncertaintyDecomposer::processPointCloud(
         sum_total += u_total;
     }
 
-    // ── Diagnostics: log per-component means every 30 clouds ─────────────────
+    // ── Diagnostics (debug only — not on hot path) ───────────────────────────
     static int call_count = 0;
     if (++call_count % 30 == 1) {
         double n = static_cast<double>(num_points);
-        ROS_INFO("[Uncertainty] n=%zu  sem=%.3f  spa=%.3f  obs=%.3f  temp=%.3f  total=%.3f",
-                 num_points,
-                 sum_sem/n, sum_spa/n, sum_obs/n, sum_temp/n, sum_total/n);
+        ROS_DEBUG("[Uncertainty] n=%zu  sem=%.3f  spa=%.3f  obs=%.3f  temp=%.3f  total=%.3f",
+                  num_points,
+                  sum_sem/n, sum_spa/n, sum_obs/n, sum_temp/n, sum_total/n);
     }
 }
 
@@ -409,27 +406,54 @@ void UncertaintyDecomposer::processPointCloudWithNeighbors(
     
     const size_t num_points = points.size();
     
-    #pragma omp parallel for schedule(dynamic)
+    // Phase 1 (parallel): sem + spa + obs using indices, no neighbor copies
+    struct PartialResult2 { double u_sem, u_spa, u_obs; };
+    std::vector<PartialResult2> partial2(num_points);
+
+    #pragma omp parallel for schedule(static)
     for (size_t i = 0; i < num_points; ++i) {
-        // Gather neighbors
-        std::vector<SemanticPoint> neighbors;
-        neighbors.reserve(neighbor_indices[i].size());
-        
-        for (int idx : neighbor_indices[i]) {
-            if (idx >= 0 && idx < static_cast<int>(num_points) && idx != static_cast<int>(i)) {
-                neighbors.push_back(points[idx]);
-            }
+        const SemanticPoint& pt = points[i];
+        const std::vector<int>& nb = neighbor_indices[i];
+        const int n_valid = static_cast<int>(num_points);
+
+        // Semantic uncertainty
+        double u_sem;
+        if (pt.uncertainty_semantic >= 0.0 && pt.uncertainty_semantic <= 1.0) {
+            u_sem = pt.uncertainty_semantic;
+        } else if (!pt.evidence.empty()) {
+            u_sem = computeSemanticUncertainty(pt.evidence,
+                                               static_cast<int>(pt.evidence.size()));
+        } else {
+            u_sem = 1.0;
         }
-        
-        // Decompose uncertainty
-        auto decomp = decompose(points[i], neighbors, sensor_origin);
-        
-        // Update point
-        points[i].uncertainty_semantic = decomp.semantic;
-        points[i].uncertainty_spatial = decomp.spatial;
-        points[i].uncertainty_observation = decomp.observation;
-        points[i].uncertainty_temporal = decomp.temporal;
-        points[i].uncertainty_total = decomp.total;
+
+        // Spatial uncertainty — index-only, no copies
+        int nb_count = 0, same = 0;
+        for (int idx : nb) {
+            if (idx < 0 || idx >= n_valid || idx == static_cast<int>(i)) continue;
+            ++nb_count;
+            if (points[idx].semantic_class == pt.semantic_class) ++same;
+        }
+        double u_spa = (nb_count < config_.min_neighbors)
+            ? 1.0
+            : std::clamp(1.0 - static_cast<double>(same) / nb_count, 0.0, 1.0);
+
+        double u_obs = computeObservationUncertainty(pt.position, sensor_origin);
+        partial2[i] = {u_sem, u_spa, u_obs};
+    }
+
+    // Phase 2 (sequential): temporal + write-back — single lock for whole batch
+    std::lock_guard<std::mutex> temp_lock2(mutex_);
+    for (size_t i = 0; i < num_points; ++i) {
+        double u_temp  = computeTemporalUncertainty_nolock(points[i].position,
+                                                            points[i].semantic_class);
+        double u_total = computeTotalUncertainty(partial2[i].u_sem, partial2[i].u_spa,
+                                                  partial2[i].u_obs, u_temp);
+        points[i].uncertainty_semantic    = partial2[i].u_sem;
+        points[i].uncertainty_spatial     = partial2[i].u_spa;
+        points[i].uncertainty_observation = partial2[i].u_obs;
+        points[i].uncertainty_temporal    = u_temp;
+        points[i].uncertainty_total       = u_total;
     }
 }
 

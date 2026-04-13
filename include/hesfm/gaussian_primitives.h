@@ -98,13 +98,16 @@ public:
     /**
      * @brief Update existing primitives with new observations
      * 
-     * Associates new points with existing primitives and updates
-     * statistics incrementally.
+     * Reuses existing primitives as spatial seeds for the new frame and
+     * returns a fresh primitive set for the latest observations.
+     *
+     * This keeps the map update additive per frame while avoiding a full
+     * K-means rebuild on every cloud.
      * 
      * @param primitives Existing primitives to update
      * @param new_points New semantic points
      * @param max_distance Maximum association distance
-     * @return Updated primitives
+     * @return Updated per-frame primitives
      */
     std::vector<GaussianPrimitive> updatePrimitives(
         const std::vector<GaussianPrimitive>& primitives,

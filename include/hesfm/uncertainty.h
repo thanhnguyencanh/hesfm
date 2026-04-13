@@ -141,6 +141,9 @@ public:
      * @return Temporal uncertainty in [0, 1]
      */
     double computeTemporalUncertainty(const Vector3d& position, int current_class);
+
+    /// Lock-free version — caller must hold mutex_ or guarantee single-threaded access.
+    double computeTemporalUncertainty_nolock(const Vector3d& position, int current_class);
     
     // =========================================================================
     // Combined Uncertainty
@@ -234,6 +237,16 @@ public:
      * @brief Update configuration
      */
     void setConfig(const UncertaintyConfig& config) { config_ = config; }
+
+    /**
+     * @brief Get the active sensor model
+     */
+    const SensorModel& getSensorModel() const { return sensor_model_; }
+
+    /**
+     * @brief Update the sensor model used by observation uncertainty
+     */
+    void setSensorModel(const SensorModel& sensor_model) { sensor_model_ = sensor_model; }
     
     /**
      * @brief Update individual weights
@@ -264,6 +277,8 @@ private:
     static constexpr size_t TEMPORAL_HISTORY_MAX_ENTRIES = 500000;
     /// Clock used to stamp temporal history accesses.
     double temporal_clock_ = 0.0;
+    /// Per-instance eviction counter (replaces the broken static local in computeTemporalUncertainty).
+    uint32_t temporal_access_count_ = 0;
 
     /**
      * @brief Evict stale entries from temporal_history_ (call periodically).

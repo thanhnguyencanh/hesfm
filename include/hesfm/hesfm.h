@@ -64,7 +64,9 @@ public:
           primitive_builder_(config.primitive),
           kernel_(config.kernel),
           semantic_map_(config.map),
-          exploration_planner_(config.exploration) {}
+          exploration_planner_(config.exploration) {
+        uncertainty_decomposer_.setSensorModel(config.processing.sensor_model);
+    }
     
     /**
      * @brief Process semantic point cloud and update map
@@ -82,11 +84,20 @@ public:
         // Step 1: Compute uncertainties
         uncertainty_decomposer_.processPointCloud(points, sensor_origin);
 
-        // Step 2: Build primitives (cache result — avoids double K-means in node)
-        last_primitives_ = primitive_builder_.buildPrimitives(points);
+        // Step 2: Build or incrementally update primitives for this frame.
+        // We keep the output frame-local so map integration stays additive.
+        if (shouldRebuildPrimitives()) {
+            last_primitives_ = primitive_builder_.buildPrimitives(points);
+        } else {
+            last_primitives_ = primitive_builder_.updatePrimitives(
+                last_primitives_,
+                points,
+                config_.primitive.incremental_max_distance);
+        }
 
         // Step 3: Update map
         semantic_map_.update(last_primitives_, kernel_);
+        ++processed_cloud_count_;
 
         return static_cast<int>(last_primitives_.size());
     }
@@ -137,6 +148,8 @@ public:
     void reset() {
         semantic_map_.reset();
         uncertainty_decomposer_.resetTemporalHistory();
+        last_primitives_.clear();
+        processed_cloud_count_ = 0;
     }
     
     // Accessors for individual components
@@ -149,6 +162,16 @@ public:
     const HESFMConfig& getConfig() const { return config_; }
 
 private:
+    bool shouldRebuildPrimitives() const {
+        if (!config_.primitive.use_incremental_updates || last_primitives_.empty()) {
+            return true;
+        }
+
+        return config_.primitive.full_rebuild_interval > 0 &&
+               processed_cloud_count_ > 0 &&
+               processed_cloud_count_ % static_cast<size_t>(config_.primitive.full_rebuild_interval) == 0;
+    }
+
     HESFMConfig config_;
     UncertaintyDecomposer uncertainty_decomposer_;
     GaussianPrimitiveBuilder primitive_builder_;
@@ -156,6 +179,7 @@ private:
     SemanticMap semantic_map_;
     ExplorationPlanner exploration_planner_;
     std::vector<GaussianPrimitive> last_primitives_;
+    size_t processed_cloud_count_ = 0;
 };
 
 } // namespace hesfm

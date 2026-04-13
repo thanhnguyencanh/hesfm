@@ -24,8 +24,6 @@
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <std_msgs/ColorRGBA.h>
-#include <dynamic_reconfigure/server.h>
-
 #include <pcl_ros/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_types.h>

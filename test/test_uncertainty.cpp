@@ -133,8 +133,7 @@ TEST_F(UncertaintyTest, BatchProcessing) {
             static_cast<double>(rand()) / RAND_MAX);
         p.semantic_class = rand() % 40;
         p.depth = 1.0 + 4.0 * static_cast<double>(rand()) / RAND_MAX;
-        p.class_probabilities.resize(40, 0.01);
-        p.class_probabilities[p.semantic_class] = 0.6;
+        p.semantic_confidence = 0.6f;
         points.push_back(p);
     }
     

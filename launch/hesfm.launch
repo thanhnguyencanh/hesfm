@@ -38,8 +38,7 @@
   <!-- ESANet dataset: 'nyuv2' (40 classes) or 'sunrgbd' (37 classes) -->
   <arg name="esanet_dataset" default="sunrgbd"/>
 
-  <!-- Processing options -->
-  <arg name="downsample_factor" default="2"/>
+  <!-- Visualization / remap sizing options -->
   <!-- 13 = 12 office-relevant classes + 1 "other" (remapped from 37) -->
   <arg name="num_classes" default="13"/>
   
@@ -60,7 +59,7 @@
   <arg name="rviz" default="true"/>
 
   <!-- Nodelet mode: run cloud + mapper in one process for zero-copy PointCloud2 -->
-  <arg name="use_nodelets" default="false"/>
+  <arg name="use_nodelets" default="true"/>
 
   <!-- Optional visualisation outputs (disable on Jetson to save CPU/bandwidth) -->
   <arg name="publish_primitives"       default="false"/>
@@ -149,18 +148,12 @@
     <node unless="$(arg use_nodelets)"
           name="semantic_cloud_node" pkg="hesfm" type="semantic_cloud_node"
           output="screen" respawn="false">
+      <rosparam file="$(arg config_file)" command="load"/>
       <remap from="depth/image_rect_raw" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
       <remap from="color/camera_info" to="$(arg camera_name)/color/camera_info"/>
       <remap from="semantic/image" to="semantic_segmentation_node/semantic_image"/>
       <remap from="semantic/uncertainty" to="semantic_segmentation_node/uncertainty"/>
-      <param name="downsample_factor" value="$(arg downsample_factor)"/>
-      <param name="min_depth" value="0.1"/>
-      <param name="max_depth" value="5.0"/>
       <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
-      <param name="default_uncertainty" value="0.3"/>
-      <param name="queue_size" value="30"/>
-      <param name="output_frame" value="camera_accel_optical_frame"/>
-      <rosparam param="relevant_classes">[0, 1, 2, 4, 6, 7, 8, 13, 21, 24, 25, 30]</rosparam>
     </node>
 
     <!-- Nodelet (zero-copy to mapper) -->
@@ -168,18 +161,12 @@
           pkg="nodelet" type="nodelet" name="semantic_cloud_node"
           args="load hesfm/SemanticCloudNodelet hesfm_manager"
           output="screen" respawn="false">
+      <rosparam file="$(arg config_file)" command="load"/>
       <remap from="depth/image_rect_raw" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
       <remap from="color/camera_info" to="$(arg camera_name)/color/camera_info"/>
       <remap from="semantic/image" to="semantic_segmentation_node/semantic_image"/>
       <remap from="semantic/uncertainty" to="semantic_segmentation_node/uncertainty"/>
-      <param name="downsample_factor" value="$(arg downsample_factor)"/>
-      <param name="min_depth" value="0.1"/>
-      <param name="max_depth" value="5.0"/>
       <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
-      <param name="default_uncertainty" value="0.3"/>
-      <param name="queue_size" value="30"/>
-      <param name="output_frame" value="camera_accel_optical_frame"/>
-      <rosparam param="relevant_classes">[0, 1, 2, 4, 6, 7, 8, 13, 21, 24, 25, 30]</rosparam>
     </node>
   </group>
 
@@ -193,11 +180,6 @@
       <rosparam file="$(arg config_file)" command="load"/>
       <param name="map_frame"                value="$(arg map_frame)"/>
       <param name="esanet_dataset"           value="$(arg esanet_dataset)"/>
-      <param name="resolution"               value="$(arg resolution)"/>
-      <param name="map_size_x"               value="$(arg map_size_x)"/>
-      <param name="map_size_y"               value="$(arg map_size_y)"/>
-      <param name="map_size_z"               value="$(arg map_size_z)"/>
-      <param name="num_classes"              value="$(arg num_classes)"/>
       <param name="publish_primitives"       value="$(arg publish_primitives)"/>
       <param name="publish_uncertainty_map"  value="$(arg publish_uncertainty_map)"/>
       <param name="publish_uncertainty_cloud" value="$(arg publish_uncertainty_cloud)"/>
@@ -211,11 +193,6 @@
       <rosparam file="$(arg config_file)" command="load"/>
       <param name="map_frame"                value="$(arg map_frame)"/>
       <param name="esanet_dataset"           value="$(arg esanet_dataset)"/>
-      <param name="resolution"               value="$(arg resolution)"/>
-      <param name="map_size_x"               value="$(arg map_size_x)"/>
-      <param name="map_size_y"               value="$(arg map_size_y)"/>
-      <param name="map_size_z"               value="$(arg map_size_z)"/>
-      <param name="num_classes"              value="$(arg num_classes)"/>
       <param name="publish_primitives"       value="$(arg publish_primitives)"/>
       <param name="publish_uncertainty_map"  value="$(arg publish_uncertainty_map)"/>
       <param name="publish_uncertainty_cloud" value="$(arg publish_uncertainty_cloud)"/>

@@ -21,6 +21,7 @@
 #include "hesfm/config.h"
 #include "hesfm/adaptive_kernel.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -161,9 +162,31 @@ public:
     std::optional<MapCell> getCell(const Vector3d& position) const;
     
     /**
-     * @brief Get all observed cells
+     * @brief Get all observed cells (full copy — expensive at large map sizes)
      */
     std::vector<MapCell> getOccupiedCells() const;
+
+    /**
+     * @brief Lightweight publish view: position + predicted class + confidence.
+     * ~20 bytes vs ~250 bytes for MapCell — used by the publish timer.
+     */
+    struct CellView {
+        float x, y, z;
+        int8_t  pred_class;
+        float   confidence;
+    };
+
+    /**
+     * @brief Snapshot of all occupied cells as lightweight views.
+     * Called once per publish tick — avoids copying log_odds vectors.
+     */
+    std::vector<CellView> getCellViews() const;
+
+    /**
+     * @brief Return only cells modified since last call, then clear the dirty set.
+     * Enables incremental map publishing — only updated voxels are retransmitted.
+     */
+    std::vector<CellView> popDirtyViews();
     
     /**
      * @brief Get cells within bounding box
@@ -314,6 +337,9 @@ private:
     /// Mutex for thread safety
     mutable std::shared_mutex mutex_;
     
+    /// Dirty cell hashes — populated during update(), consumed by popDirtyViews()
+    std::unordered_set<size_t> dirty_hashes_;
+
     /// Statistics
     size_t total_observations_ = 0;
     double last_update_time_ = 0.0;

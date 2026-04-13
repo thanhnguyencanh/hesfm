@@ -212,20 +212,6 @@
   </node>
   
   <!-- ===================================================================== -->
-  <!-- Semantic Recovery Behavior -->
-  <!-- ===================================================================== -->
-  
-  <node name="semantic_recovery" pkg="hesfm" type="semantic_recovery_node.py"
-        output="screen" respawn="false">
-    <param name="map_frame" value="$(arg map_frame)"/>
-    <param name="robot_frame" value="$(arg base_frame)"/>
-    <param name="recovery_distance" value="1.0"/>
-    
-    <!-- Prefer to recover towards traversable areas -->
-    <rosparam param="preferred_classes">[1, 19]</rosparam>
-  </node>
-  
-  <!-- ===================================================================== -->
   <!-- RViz -->
   <!-- ===================================================================== -->
   

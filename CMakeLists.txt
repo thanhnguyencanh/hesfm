@@ -45,7 +45,6 @@ find_package(catkin REQUIRED COMPONENTS
   message_filters
   pcl_conversions
   message_generation
-  dynamic_reconfigure
   nodelet
 )
 
@@ -101,14 +100,6 @@ add_service_files(
   SetParameters.srv
 )
 
-# Dynamic reconfigure
-generate_dynamic_reconfigure_options(
-  cfg/HESFMMapper.cfg
-  cfg/SemanticSegmentation.cfg
-  cfg/Costmap.cfg
-  cfg/Exploration.cfg
-)
-
 # Generate messages
 generate_messages(
   DEPENDENCIES
@@ -146,7 +137,6 @@ catkin_package(
     message_filters
     pcl_conversions 
     message_runtime
-    dynamic_reconfigure
     nodelet
   DEPENDS 
     EIGEN3 
@@ -247,7 +237,6 @@ add_executable(hesfm_mapper_node
 add_dependencies(hesfm_mapper_node
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}
-  ${PROJECT_NAME}_gencfg
 )
 
 target_link_libraries(hesfm_mapper_node
@@ -322,7 +311,6 @@ add_library(hesfm_nodelets
 add_dependencies(hesfm_nodelets
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}
-  ${PROJECT_NAME}_gencfg
 )
 
 target_link_libraries(hesfm_nodelets
@@ -345,6 +333,9 @@ install(TARGETS hesfm_core hesfm_nodelets
 
 ## Install executables
 install(TARGETS 
+  costmap_node
+  semantic_costmap_3d_node
+  exploration_node
   hesfm_mapper_node
   semantic_cloud_node
   visualization_node
@@ -377,6 +368,7 @@ install(DIRECTORY rviz/
 
 ## Install Python scripts
 catkin_install_python(PROGRAMS
+  scripts/exploration_goal_relay.py
   scripts/semantic_segmentation_node.py
   scripts/evaluation_node.py
   scripts/dataset_loader.py

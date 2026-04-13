@@ -203,6 +203,9 @@ void SemanticMap::update(const std::vector<GaussianPrimitive>& primitives,
         }
     }
 
+    // Accumulate dirty hashes for incremental publish
+    dirty_hashes_.insert(modified_hashes.begin(), modified_hashes.end());
+
     total_observations_ += primitives.size();
 
     // Enforce max_cells limit — prune lowest-confidence cells when exceeded
@@ -357,6 +360,49 @@ std::vector<MapCell> SemanticMap::getOccupiedCells() const {
         }
     }
     
+    return result;
+}
+
+std::vector<SemanticMap::CellView> SemanticMap::getCellViews() const {
+    std::shared_lock<std::shared_mutex> lock(mutex_);
+
+    std::vector<CellView> result;
+    result.reserve(cells_.size());
+
+    for (const auto& [hash, cell] : cells_) {
+        if (cell.state.observation_count == 0) continue;
+        CellView v;
+        v.x = static_cast<float>(cell.position.x());
+        v.y = static_cast<float>(cell.position.y());
+        v.z = static_cast<float>(cell.position.z());
+        v.pred_class = static_cast<int8_t>(cell.state.getPredictedClass());
+        v.confidence  = static_cast<float>(cell.state.getConfidence());
+        result.push_back(v);
+    }
+
+    return result;
+}
+
+std::vector<SemanticMap::CellView> SemanticMap::popDirtyViews() {
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+
+    std::vector<CellView> result;
+    result.reserve(dirty_hashes_.size());
+
+    for (size_t hash : dirty_hashes_) {
+        auto it = cells_.find(hash);
+        if (it == cells_.end()) continue;
+        const MapCell& cell = it->second;
+        CellView v;
+        v.x = static_cast<float>(cell.position.x());
+        v.y = static_cast<float>(cell.position.y());
+        v.z = static_cast<float>(cell.position.z());
+        v.pred_class = static_cast<int8_t>(cell.state.getPredictedClass());
+        v.confidence  = static_cast<float>(cell.state.getConfidence());
+        result.push_back(v);
+    }
+
+    dirty_hashes_.clear();
     return result;
 }
 

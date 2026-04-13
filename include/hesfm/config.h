@@ -94,6 +94,19 @@ struct PrimitiveConfig {
     /// K-means parameters
     int kmeans_max_iter = 100;
     double kmeans_tolerance = 1e-4;
+
+    /// Reuse the previous frame's primitives as seeds for the next frame.
+    /// This avoids full K-means rebuilds on every cloud while still emitting
+    /// a fresh primitive set for the current observation.
+    bool use_incremental_updates = true;
+
+    /// Maximum association distance when matching new points to prior
+    /// primitives during incremental updates.
+    double incremental_max_distance = 0.5;
+
+    /// Optional safety valve: force a full primitive rebuild every N clouds.
+    /// Set to 0 to keep using the incremental path indefinitely.
+    int full_rebuild_interval = 0;
     
     /// Number of semantic classes
     int num_classes = DEFAULT_NUM_CLASSES;

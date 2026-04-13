@@ -10,6 +10,7 @@
 #include <numeric>
 #include <cmath>
 #include <limits>
+#include <unordered_map>
 
 namespace hesfm {
 
@@ -95,71 +96,126 @@ std::vector<GaussianPrimitive> GaussianPrimitiveBuilder::updatePrimitives(
     const std::vector<GaussianPrimitive>& primitives,
     const std::vector<SemanticPoint>& new_points,
     double max_distance) {
-    
-    std::vector<GaussianPrimitive> updated = primitives;
-    std::vector<bool> point_assigned(new_points.size(), false);
-    
-    // Associate new points with existing primitives
-    for (size_t i = 0; i < new_points.size(); ++i) {
-        double min_dist = std::numeric_limits<double>::max();
+
+    if (primitives.empty()) {
+        return buildPrimitives(new_points);
+    }
+    if (new_points.size() < static_cast<size_t>(config_.min_points_per_primitive)) {
+        return {};
+    }
+
+    std::vector<std::vector<int>> assigned_indices(primitives.size());
+    std::vector<int> unassigned_indices;
+    unassigned_indices.reserve(new_points.size());
+
+    const size_t K = primitives.size();
+    const double max_dist_sq = max_distance * max_distance;
+    const int N = static_cast<int>(new_points.size());
+
+    // ── Centroid voxel grid ───────────────────────────────────────────────────
+    // Grid cell = max_distance cube. Each point only checks the 3×3×3 = 27
+    // neighbouring cells, giving O(N × candidates_per_cell) instead of O(N×K).
+    const double inv_cell = 1.0 / max_distance;
+
+    // Hash: (ix, iy, iz) → list of primitive indices whose centroid falls there
+    struct VoxelKey {
+        int x, y, z;
+        bool operator==(const VoxelKey& o) const {
+            return x == o.x && y == o.y && z == o.z;
+        }
+    };
+    struct VoxelHash {
+        size_t operator()(const VoxelKey& k) const {
+            // FNV-style mix — good distribution for small integer triples
+            size_t h = static_cast<size_t>(k.x) * 73856093u;
+            h ^= static_cast<size_t>(k.y) * 19349663u;
+            h ^= static_cast<size_t>(k.z) * 83492791u;
+            return h;
+        }
+    };
+
+    std::unordered_map<VoxelKey, std::vector<int>, VoxelHash> centroid_grid;
+    centroid_grid.reserve(K * 2);
+    for (size_t j = 0; j < K; ++j) {
+        const Vector3d& c = primitives[j].centroid;
+        VoxelKey key{
+            static_cast<int>(std::floor(c.x() * inv_cell)),
+            static_cast<int>(std::floor(c.y() * inv_cell)),
+            static_cast<int>(std::floor(c.z() * inv_cell))
+        };
+        centroid_grid[key].push_back(static_cast<int>(j));
+    }
+
+    // Associate: for each point query the 27-cell neighbourhood
+    std::vector<int> point_assignment(N, -1);
+
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < N; ++i) {
+        const Vector3d& pos = new_points[i].position;
+        const int gx = static_cast<int>(std::floor(pos.x() * inv_cell));
+        const int gy = static_cast<int>(std::floor(pos.y() * inv_cell));
+        const int gz = static_cast<int>(std::floor(pos.z() * inv_cell));
+
+        double min_dist_sq = max_dist_sq;
         int best_prim = -1;
-        
-        for (size_t j = 0; j < updated.size(); ++j) {
-            double dist = (new_points[i].position - updated[j].centroid).norm();
-            if (dist < min_dist && dist < max_distance) {
-                min_dist = dist;
-                best_prim = static_cast<int>(j);
+
+        for (int dx = -1; dx <= 1; ++dx) {
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dz = -1; dz <= 1; ++dz) {
+                    VoxelKey key{gx+dx, gy+dy, gz+dz};
+                    auto it = centroid_grid.find(key);
+                    if (it == centroid_grid.end()) continue;
+                    for (int j : it->second) {
+                        double d2 = (pos - primitives[j].centroid).squaredNorm();
+                        if (d2 < min_dist_sq) {
+                            min_dist_sq = d2;
+                            best_prim   = j;
+                        }
+                    }
+                }
             }
         }
-        
-        if (best_prim >= 0) {
-            // Update primitive with new point
-            auto& prim = updated[best_prim];
-            double weight = new_points[i].getWeight();
-            double total_weight = prim.total_weight + weight;
-            
-            // Update centroid (weighted running average)
-            prim.centroid = (prim.centroid * prim.total_weight + 
-                            new_points[i].position * weight) / total_weight;
-            
-            // Update class probabilities via DST fusion (materialize point probs on demand)
-            const SemanticPoint& np = new_points[i];
-            std::vector<double> np_probs(config_.num_classes,
-                (1.0 - np.semantic_confidence) / std::max(config_.num_classes - 1, 1));
-            if (np.semantic_class >= 0 && np.semantic_class < config_.num_classes) {
-                np_probs[np.semantic_class] = np.semantic_confidence;
-            }
-            double conflict;
-            prim.class_probabilities = dstFusion(
-                prim.class_probabilities,
-                np_probs,
-                prim.uncertainty,
-                np.uncertainty_total,
-                conflict);
-            prim.conflict = std::max(prim.conflict, conflict);
-            
-            prim.point_count++;
-            prim.total_weight = total_weight;
-            prim.uncertainty = (prim.uncertainty * (prim.point_count - 1) + 
-                               new_points[i].uncertainty_total) / prim.point_count;
-            
-            point_assigned[i] = true;
-        }
+        point_assignment[i] = best_prim;
     }
-    
-    // Create new primitives for unassigned points
-    std::vector<SemanticPoint> unassigned;
-    for (size_t i = 0; i < new_points.size(); ++i) {
-        if (!point_assigned[i]) {
-            unassigned.push_back(new_points[i]);
-        }
+
+    // Single-pass bucket fill — no locking needed
+    for (int i = 0; i < N; ++i) {
+        if (point_assignment[i] >= 0)
+            assigned_indices[point_assignment[i]].push_back(i);
+        else
+            unassigned_indices.push_back(i);
     }
-    
-    if (unassigned.size() >= static_cast<size_t>(config_.min_points_per_primitive)) {
-        auto new_prims = buildPrimitives(unassigned);
+
+    std::vector<GaussianPrimitive> updated;
+    updated.reserve(primitives.size());
+
+    // Recompute matched primitives from the current frame while preserving IDs.
+    for (size_t j = 0; j < primitives.size(); ++j) {
+        auto& bucket = assigned_indices[j];
+        if (bucket.size() < static_cast<size_t>(config_.min_points_per_primitive)) {
+            unassigned_indices.insert(unassigned_indices.end(), bucket.begin(), bucket.end());
+            continue;
+        }
+
+        GaussianPrimitive updated_primitive = computePrimitive(new_points, bucket);
+        updated_primitive.id = primitives[j].id;
+        updated_primitive.is_dynamic = primitives[j].is_dynamic;
+        updated_primitive.reachability = primitives[j].reachability;
+        updated.push_back(std::move(updated_primitive));
+    }
+
+    // Points that do not match an existing primitive still get clustered.
+    if (unassigned_indices.size() >= static_cast<size_t>(config_.min_points_per_primitive)) {
+        std::vector<SemanticPoint> unassigned_points;
+        unassigned_points.reserve(unassigned_indices.size());
+        for (int idx : unassigned_indices) {
+            unassigned_points.push_back(new_points[idx]);
+        }
+
+        auto new_prims = buildPrimitives(unassigned_points);
         updated.insert(updated.end(), new_prims.begin(), new_prims.end());
     }
-    
+
     return updated;
 }
 

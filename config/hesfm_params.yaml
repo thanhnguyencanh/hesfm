@@ -1,399 +1,123 @@
 # =============================================================================
-# HESFM Configuration File
-# Hierarchical Evidential Semantic-Functional Mapping
+# HESFM Runtime Configuration
 # =============================================================================
 #
-# This file contains all configurable parameters for the HESFM system.
-# Load with: rosparam load hesfm_params.yaml
+# This file is loaded by `launch/hesfm.launch` into:
+# - `hesfm_mapper_node` / `HESFMMapperNodelet`
+# - `semantic_cloud_node` / `SemanticCloudNodelet`
 #
-# Author: Thanh Nguyen Canh <thanhnc@jaist.ac.jp>
-# Date: 2026
+# It is also preloaded into `/hesfm_mapper_node` so the segmentation node can
+# read `navigation/relevant_classes` before the mapper starts.
+#
+# Launch still controls startup topology and operational switches such as:
+# - `launch_camera`, `launch_segmentation`, `launch_mapper`
+# - `use_nodelets`
+# - `map_frame`, `esanet_dataset`
+# - optional debug publishers like `publish_primitives`
 # =============================================================================
-
-# -----------------------------------------------------------------------------
-# Frame IDs
-# -----------------------------------------------------------------------------
-frames:
-  map_frame: "map"
-  odom_frame: "odom"
-  base_frame: "base_link"
-  sensor_frame: "camera_color_optical_frame"
 
 # -----------------------------------------------------------------------------
 # Semantic Map Configuration
 # -----------------------------------------------------------------------------
 map:
-  # Voxel resolution in meters
   resolution: 0.05
-  
-  # Map dimensions (meters)
   size_x: 20.0
   size_y: 20.0
   size_z: 3.0
-  
-  # Map origin (minimum corner)
+
   origin_x: -10.0
   origin_y: -10.0
   origin_z: -0.5
-  
-  # Number of semantic classes (13 = 12 office-relevant + 1 "other", remapped from SUNRGBD 37)
+
+  # 12 relevant SUNRGBD classes + 1 "other" class after remapping.
   num_classes: 13
 
-  # Log-odds bounds for numerical stability
-  log_odds_min: -10.0
-  log_odds_max: 10.0
-
-  # Prior probability (uniform)
-  prior_prob: 0.027  # 1/37
-  
-  # Maximum number of cells (memory limit)
-  max_cells: 1500000
-
 # -----------------------------------------------------------------------------
-# Semantic Segmentation Configuration
-# -----------------------------------------------------------------------------
-segmentation:
-  # Backend: dformer, esanet_trt, esanet_pytorch, auto
-  backend: "esanet_trt"
-
-  # ESANet dataset: 'nyuv2' (40 classes) or 'sunrgbd' (37 classes)
-  # Controls depth normalization stats and colour palette.
-  esanet_dataset: "sunrgbd"
-
-  # Input resolution
-  input_width: 640
-  input_height: 480
-
-  # Number of classes — must match esanet_dataset (nyuv2=40, sunrgbd=37)
-  num_classes: 37
-
-  # Confidence threshold for predictions
-  confidence_threshold: 0.3
-
-  # Model paths (relative to package)
-  dformer_model_path: "models/dformer_large_sunrgbd.pth"
-  esanet_model_path:  "models/esanet_r34_sunrgbd.pth"
-  esanet_trt_engine:  "models/esanet_r34_sunrgbd_fp16.engine"
-
-  # Performance options
-  use_cuda: true
-  fp16: true
-  async_inference: false
-
-  # Output options
-  publish_color: true
-  publish_probabilities: true
-  publish_uncertainty: false
-
-  # SUNRGBD 37-class names (source: ESANet/src/datasets/sunrgbd/sunrgbd.py)
-  class_names:
-    - "wall"           # 0
-    - "floor"          # 1
-    - "cabinet"        # 2
-    - "bed"            # 3
-    - "chair"          # 4
-    - "sofa"           # 5
-    - "table"          # 6
-    - "door"           # 7
-    - "window"         # 8
-    - "bookshelf"      # 9
-    - "picture"        # 10
-    - "counter"        # 11
-    - "blinds"         # 12
-    - "desk"           # 13
-    - "shelves"        # 14
-    - "curtain"        # 15
-    - "dresser"        # 16
-    - "pillow"         # 17
-    - "mirror"         # 18
-    - "floor mat"      # 19
-    - "clothes"        # 20
-    - "ceiling"        # 21
-    - "books"          # 22
-    - "fridge"         # 23
-    - "tv"             # 24
-    - "paper"          # 25
-    - "towel"          # 26
-    - "shower curtain" # 27
-    - "box"            # 28
-    - "whiteboard"     # 29
-    - "person"         # 30
-    - "night stand"    # 31
-    - "toilet"         # 32
-    - "sink"           # 33
-    - "lamp"           # 34
-    - "bathtub"        # 35
-    - "bag"            # 36
-
-# -----------------------------------------------------------------------------
-# Uncertainty Decomposition Configuration
+# Uncertainty Decomposition
 # -----------------------------------------------------------------------------
 uncertainty:
-  # Component weights (should sum to 1.0)
-  w_semantic: 0.40      # Semantic uncertainty from EDL
-  w_spatial: 0.20       # Spatial consistency
-  w_observation: 0.25   # Sensor model uncertainty
-  w_temporal: 0.15      # Temporal prediction consistency
-  
-  # Spatial uncertainty parameters
-  spatial_radius: 0.2   # Neighborhood radius (meters)
-  min_neighbors: 3      # Minimum neighbors for valid computation
-  
-  # Observation uncertainty coefficients
-  sigma_range: 0.5      # Range-based uncertainty weight
-  sigma_density: 0.3    # Density-based uncertainty weight
-  sigma_angle: 0.2      # Incidence angle uncertainty weight
-  max_density: 100.0    # Maximum expected point density
-  
-  # Temporal tracking
-  temporal_resolution: 0.05  # Spatial hash resolution
-  temporal_window: 10        # Number of observations to track
+  w_semantic: 0.40
+  w_spatial: 0.20
+  w_observation: 0.25
+  w_temporal: 0.15
+
+  spatial_radius: 0.2
+  min_neighbors: 3
+
+  sigma_range: 0.5
+  sigma_density: 0.3
+  sigma_angle: 0.2
+  max_density: 100.0
+
+  temporal_resolution: 0.05
 
 # -----------------------------------------------------------------------------
-# Gaussian Primitive Configuration
+# Gaussian Primitives
 # -----------------------------------------------------------------------------
 primitives:
-  # Target number of primitives per frame.
-  # 256 primitives compress a dense cloud into compact representatives.
-  # Reduce to 128 on Jetson or if CPU is still bottlenecked.
   target_primitives: 256
-  
-  # Minimum points required to form a primitive
   min_points_per_primitive: 5
-  
-  # Maximum points per primitive
   max_points_per_primitive: 1000
-  
-  # DST conflict threshold — keep if conflict < this value.
-  # Note: even perfectly same-class primitives produce conflict ≈ 0.38 due to
-  # background probability mass (0.01 × 36 classes). Use 0.9 to pass most primitives.
   conflict_threshold: 0.9
-  
-  # Covariance regularization — keeps eigenvalues ≥ this value.
-  # Minimum to guarantee 1-cell Euclidean coverage: (resolution / length_scale_min)² = (0.05/0.1)² = 0.25
   regularization: 0.05
-  
-  # Uncertainty weighting in clustering
   uncertainty_weight_lambda: 1.0
-  
-  # K-means parameters — 30 iterations is sufficient for real-time; convergence
-  # is typically reached in <15 iterations with K-means++ initialization.
   kmeans_max_iter: 15
   kmeans_tolerance: 0.01
 
+  use_incremental_updates: true
+  incremental_max_distance: 0.5
+  full_rebuild_interval: 0
+
+  # Keep primitive belief vectors aligned with the compact class remap.
+  num_classes: 13
+
 # -----------------------------------------------------------------------------
-# Adaptive Kernel Configuration
+# Adaptive Kernel
 # -----------------------------------------------------------------------------
 kernel:
-  # Length scale bounds (Mahalanobis units).
-  # Euclidean influence = length_scale * sigma_cluster.
-  # min=0.5, max=1.0 keeps each primitive within ~2-3 voxels radius (~27 voxels).
-  # Previous values (0.8/1.5) were causing ~729 voxels per primitive (the big blocks).
-  length_scale_min: 0.8
-  length_scale_max: 1.5
-  
-  # Uncertainty gating
-  uncertainty_threshold: 0.7   # Gate threshold (kernel=0 above this)
-  uncertainty_low: 0.3         # Low uncertainty reference
-  gamma: 2.0                   # Gating sharpness
-  
-  # Reachability kernel
+  length_scale_min: 0.5
+  length_scale_max: 1.0
+  uncertainty_threshold: 0.7
+  uncertainty_low: 0.3
+  gamma: 2.0
   reachability_lambda: 1.0
-  
-  # Confidence weighting
   confidence_weight_beta: 2.0
   entropy_weight_gamma: 1.0
-  
-  # Kernel type: sparse, rbf
-  kernel_type: "sparse"
 
 # -----------------------------------------------------------------------------
-# Navigation Configuration
+# Navigation / Semantic Remapping
 # -----------------------------------------------------------------------------
 navigation:
-  # Height range for 2D costmap projection
-  costmap_height_min: 0.0
-  costmap_height_max: 0.5
-  
-  # Cost values
-  free_cost: 0
-  unknown_cost: -1
-  obstacle_cost: 100
-  
-  # Inflation parameters
-  inflation_radius: 0.3
-  cost_scaling_factor: 10.0
-  
-  # Minimum confidence for cost assignment
-  min_confidence: 0.3
-  
-  # --- Compact remapped class indices (13 classes) ---
-  # Remap: old → new:
-  #   0=wall→0  1=floor→1  2=cabinet→2  4=chair→3  6=table→4
-  #   7=door→5  8=window→6  13=desk→7  21=ceiling→8  24=television→9
-  #   25=paper→10  30=person→11  *=other→12
-  #
-  # Original SUN RGB-D indices used by the segmentation LUT.
-  # The segmentation node reads this list and builds the remap table.
   relevant_classes: [0, 1, 2, 4, 6, 7, 8, 13, 21, 24, 25, 30]
 
-  # Traversable (remapped): floor=1
+  # After remapping, floor becomes class 1.
   traversable_classes: [1]
 
-  # Obstacle (remapped): wall=0, cabinet=2, chair=3, table=4, door=5,
-  #   window=6, desk=7, television=9, person=11, other=12
-  obstacle_classes: [0, 2, 3, 4, 5, 6, 7, 9, 11, 12]
-
-  # Per-class semantic costs (remapped indices)
-  semantic_costs:
-    "0":  80    # wall
-    "1":  0     # floor (traversable)
-    "2":  80    # cabinet
-    "3":  85    # chair
-    "4":  80    # table
-    "5":  70    # door (semi-traversable)
-    "6":  100   # window
-    "7":  80    # desk
-    "8":  0     # ceiling (overhead, not obstacle for ground robot)
-    "9":  90    # television
-    "10": 10    # paper
-    "11": 100   # person (dynamic obstacle)
-    "12": 50    # other (unknown — moderate cost)
-
 # -----------------------------------------------------------------------------
-# Exploration Configuration
-# -----------------------------------------------------------------------------
-exploration:
-  # Maximum exploration distance from robot
-  max_distance: 10.0
-  
-  # Minimum information gain threshold
-  min_info_gain: 0.1
-  
-  # Maximum number of goals to generate
-  max_goals: 10
-  
-  # Sensor parameters for visibility computation
-  sensor_range: 6.0
-  sensor_fov_horizontal: 1.2  # radians (~69 degrees)
-  sensor_fov_vertical: 0.9    # radians (~52 degrees)
-  
-  # Safety constraints
-  min_obstacle_distance: 0.5
-  
-  # Utility weights
-  weight_info_gain: 1.0
-  weight_distance: 0.3
-  weight_uncertainty: 0.5
-  
-  # Frontier detection
-  min_frontier_size: 10
-  
-  # Update rate (Hz)
-  update_rate: 1.0
-
-# -----------------------------------------------------------------------------
-# Sensor Configuration (Intel RealSense D455)
-# -----------------------------------------------------------------------------
-sensor:
-  # Range limits
-  max_range: 6.0
-  min_range: 0.1
-  
-  # Measurement noise
-  range_sigma: 0.02
-  angular_sigma: 0.01
-  
-  # Local density computation
-  density_radius: 0.1
-  
-  # Camera intrinsics (640x480)
-  fx: 385.9
-  fy: 385.4
-  cx: 325.6
-  cy: 238.9
-  width: 640
-  height: 480
-
-
-# -----------------------------------------------------------------------------
-# Processing Configuration
+# Processing
 # -----------------------------------------------------------------------------
 processing:
-  # Publishing rates (Hz)
   map_publish_rate: 1.0
-  costmap_publish_rate: 5.0
-  primitive_publish_rate: 10.0
-  
-  # Point cloud processing
+
+  # Semantic cloud generation
   downsample_factor: 2
-  voxel_filter_size: 0.02
-  
-  # Threading
-  num_threads: 4
-  use_async_processing: true
-  
-  # Queue sizes
-  queue_size: 10
+  queue_size: 30
+
+  # Nodelet-only option; ignored by the standalone mapper node.
+  use_async_processing: false
 
 # -----------------------------------------------------------------------------
-# Visualization Configuration
+# Sensor Limits
 # -----------------------------------------------------------------------------
-visualization:
-  # Point size for RViz
-  point_size: 0.05
-  
-  # Publish class legend
-  publish_legend: true
-  
-  # Highlight specific class (-1 = show all)
-  highlight_class: -1
-  
-  # Primitive visualization
-  show_primitives: true
-  primitive_alpha: 0.5
-  
-  # Uncertainty colormap: green (low) to red (high)
-  uncertainty_colormap: "jet"
-  
-  # Class colors (RGB, 0-255) — source: ESANet/src/datasets/sunrgbd/sunrgbd.py CLASS_COLORS[1:]
-  # In remapped 13-class mode, colors are compacted from navigation/relevant_classes
-  # and the final class index ("other") is explicitly set to [255, 165, 0].
-  class_colors:
-    "0":  [119, 119, 119]   # wall
-    "1":  [244, 243, 131]   # floor
-    "2":  [137,  28, 157]   # cabinet
-    "3":  [150, 255, 255]   # bed
-    "4":  [ 54, 114, 113]   # chair
-    "5":  [  0,   0, 176]   # sofa
-    "6":  [255,  69,   0]   # table
-    "7":  [ 87, 112, 255]   # door
-    "8":  [  0, 163,  33]   # window
-    "9":  [255, 150, 255]   # bookshelf
-    "10": [255, 180,  10]   # picture
-    "11": [101,  70,  86]   # counter
-    "12": [ 38, 230,   0]   # blinds
-    "13": [255, 120,  70]   # desk
-    "14": [117,  41, 121]   # shelves
-    "15": [150, 255,   0]   # curtain
-    "16": [132,   0, 255]   # dresser
-    "17": [ 24, 209, 255]   # pillow
-    "18": [191, 130,  35]   # mirror
-    "19": [219, 200, 109]   # floor mat
-    "20": [154,  62,  86]   # clothes
-    "21": [255, 190, 190]   # ceiling
-    "22": [255,   0, 255]   # books
-    "23": [152, 163,  55]   # fridge
-    "24": [192,  79, 212]   # tv
-    "25": [230, 230, 230]   # paper
-    "26": [ 53, 130,  64]   # towel
-    "27": [155, 249, 152]   # shower curtain
-    "28": [ 87,  64,  34]   # box
-    "29": [214, 209, 175]   # whiteboard
-    "30": [170,   0,  59]   # person
-    "31": [255,   0,   0]   # night stand
-    "32": [193, 195, 234]   # toilet
-    "33": [ 70,  72, 115]   # sink
-    "34": [255, 255,   0]   # lamp
-    "35": [ 52,  57, 131]   # bathtub
-    "36": [ 12,  83,  45]   # bag
+sensor:
+  # These now drive both semantic cloud filtering and mapper uncertainty.
+  min_range: 0.1
+  max_range: 6.0
+
+# -----------------------------------------------------------------------------
+# Semantic Cloud Output
+# -----------------------------------------------------------------------------
+semantic_cloud:
+  use_uncertainty: true
+  default_uncertainty: 0.3
+  output_frame: "camera_accel_optical_frame"

@@ -51,12 +51,15 @@ bool HESFMConfig::saveToYAML(const std::string& filepath) const {
     file << "\n";
     
     // Primitive configuration
-    file << "primitive:\n";
+    file << "primitives:\n";
     file << "  target_primitives: " << primitive.target_primitives << "\n";
     file << "  min_points_per_primitive: " << primitive.min_points_per_primitive << "\n";
     file << "  conflict_threshold: " << primitive.conflict_threshold << "\n";
     file << "  regularization: " << primitive.regularization << "\n";
     file << "  uncertainty_weight_lambda: " << primitive.uncertainty_weight_lambda << "\n";
+    file << "  use_incremental_updates: " << (primitive.use_incremental_updates ? "true" : "false") << "\n";
+    file << "  incremental_max_distance: " << primitive.incremental_max_distance << "\n";
+    file << "  full_rebuild_interval: " << primitive.full_rebuild_interval << "\n";
     file << "  num_classes: " << primitive.num_classes << "\n";
     file << "\n";
     
@@ -118,6 +121,13 @@ bool HESFMConfig::saveToYAML(const std::string& filepath) const {
     file << "  costmap_publish_rate: " << processing.costmap_publish_rate << "\n";
     file << "  downsample_factor: " << processing.downsample_factor << "\n";
     file << "  num_threads: " << processing.num_threads << "\n";
+    file << "  use_async_processing: " << (processing.use_async_processing ? "true" : "false") << "\n";
+    file << "\n";
+
+    // Sensor configuration
+    file << "sensor:\n";
+    file << "  min_range: " << processing.sensor_model.min_range << "\n";
+    file << "  max_range: " << processing.sensor_model.max_range << "\n";
     
     file.close();
     return true;
@@ -139,6 +149,9 @@ bool HESFMConfig::loadFromYAML(const std::string& filepath) {
     auto getI = [](const YAML::Node& n, const std::string& k, int def) {
         return n[k] ? n[k].as<int>(def) : def;
     };
+    auto getB = [](const YAML::Node& n, const std::string& k, bool def) {
+        return n[k] ? n[k].as<bool>() : def;
+    };
     auto getS = [](const YAML::Node& n, const std::string& k, const std::string& def) {
         return n[k] ? n[k].as<std::string>(def) : def;
     };
@@ -156,12 +169,17 @@ bool HESFMConfig::loadFromYAML(const std::string& filepath) {
         uncertainty.normalizeWeights();
     }
 
-    if (auto p = root["primitive"]) {
+    YAML::Node primitive_node = root["primitives"] ? root["primitives"] : root["primitive"];
+    if (primitive_node) {
+        const auto& p = primitive_node;
         primitive.target_primitives        = getI(p, "target_primitives",        primitive.target_primitives);
         primitive.min_points_per_primitive  = getI(p, "min_points_per_primitive", primitive.min_points_per_primitive);
         primitive.conflict_threshold       = getD(p, "conflict_threshold",       primitive.conflict_threshold);
         primitive.regularization           = getD(p, "regularization",           primitive.regularization);
         primitive.uncertainty_weight_lambda = getD(p, "uncertainty_weight_lambda", primitive.uncertainty_weight_lambda);
+        primitive.use_incremental_updates   = getB(p, "use_incremental_updates", primitive.use_incremental_updates);
+        primitive.incremental_max_distance  = getD(p, "incremental_max_distance", primitive.incremental_max_distance);
+        primitive.full_rebuild_interval     = getI(p, "full_rebuild_interval", primitive.full_rebuild_interval);
         primitive.num_classes               = getI(p, "num_classes",             primitive.num_classes);
     }
 
@@ -215,6 +233,12 @@ bool HESFMConfig::loadFromYAML(const std::string& filepath) {
         processing.costmap_publish_rate = getD(pr, "costmap_publish_rate", processing.costmap_publish_rate);
         processing.downsample_factor    = getI(pr, "downsample_factor",    processing.downsample_factor);
         processing.num_threads          = getI(pr, "num_threads",          processing.num_threads);
+        processing.use_async_processing = getB(pr, "use_async_processing", processing.use_async_processing);
+    }
+
+    if (auto s = root["sensor"]) {
+        processing.sensor_model.min_range = getD(s, "min_range", processing.sensor_model.min_range);
+        processing.sensor_model.max_range = getD(s, "max_range", processing.sensor_model.max_range);
     }
 
     return true;

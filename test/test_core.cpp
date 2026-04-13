@@ -9,6 +9,7 @@
 #include "hesfm/types.h"
 #include "hesfm/adaptive_kernel.h"
 #include "hesfm/gaussian_primitives.h"
+#include "hesfm/hesfm.h"
 #include "hesfm/semantic_map.h"
 #include "hesfm/config.h"
 
@@ -254,7 +255,7 @@ TEST(GaussianPrimitiveBuilder, EmptyClusterReseeding) {
         SemanticPoint pt;
         pt.position = Vector3d(i * 0.1, 0, 0);
         pt.semantic_class = i % 3;
-        pt.class_probabilities = {0.1, 0.1, 0.1, 0.1, 0.6};
+        pt.semantic_confidence = 0.6f;
         pt.uncertainty_total = 0.3;
         pt.depth = 1.0;
         points.push_back(pt);
@@ -292,6 +293,87 @@ TEST(GaussianPrimitiveBuilder, RefineMergesNearby) {
     // Should merge into 1
     EXPECT_EQ(refined.size(), 1u);
     EXPECT_EQ(refined[0].point_count, 20);
+}
+
+// =============================================================================
+// HESFMPipeline tests
+// =============================================================================
+
+TEST(HESFMPipeline, IncrementalPrimitiveUpdatesReuseIds) {
+    HESFMConfig cfg;
+    cfg.map.num_classes = 5;
+    cfg.map.resolution = 0.1;
+    cfg.map.origin_x = -2.0;
+    cfg.map.origin_y = -2.0;
+    cfg.map.origin_z = -1.0;
+    cfg.map.size_x = 4.0;
+    cfg.map.size_y = 4.0;
+    cfg.map.size_z = 2.0;
+    cfg.primitive.num_classes = 5;
+    cfg.primitive.target_primitives = 1;
+    cfg.primitive.min_points_per_primitive = 2;
+    cfg.primitive.use_incremental_updates = true;
+    cfg.primitive.incremental_max_distance = 1.0;
+
+    HESFMPipeline pipeline(cfg);
+
+    auto make_points = [](double center_x) {
+        std::vector<SemanticPoint> points;
+        for (int i = 0; i < 8; ++i) {
+            SemanticPoint pt;
+            pt.position = Vector3d(center_x + 0.02 * i, 0.01 * (i % 2), 0.0);
+            pt.semantic_class = 1;
+            pt.semantic_confidence = 0.9f;
+            pt.uncertainty_total = 0.2;
+            pt.uncertainty_semantic = 0.2;
+            points.push_back(pt);
+        }
+        return points;
+    };
+
+    auto frame_1 = make_points(0.0);
+    ASSERT_GT(pipeline.process(frame_1, Vector3d::Zero()), 0);
+    ASSERT_FALSE(pipeline.getLastPrimitives().empty());
+    const uint32_t initial_id = pipeline.getLastPrimitives().front().id;
+
+    auto frame_2 = make_points(0.1);
+    ASSERT_GT(pipeline.process(frame_2, Vector3d::Zero()), 0);
+    ASSERT_FALSE(pipeline.getLastPrimitives().empty());
+    EXPECT_EQ(pipeline.getLastPrimitives().front().id, initial_id);
+}
+
+TEST(HESFMPipeline, ResetClearsCachedPrimitives) {
+    HESFMConfig cfg;
+    cfg.map.num_classes = 5;
+    cfg.map.resolution = 0.1;
+    cfg.map.origin_x = -2.0;
+    cfg.map.origin_y = -2.0;
+    cfg.map.origin_z = -1.0;
+    cfg.map.size_x = 4.0;
+    cfg.map.size_y = 4.0;
+    cfg.map.size_z = 2.0;
+    cfg.primitive.num_classes = 5;
+    cfg.primitive.target_primitives = 1;
+    cfg.primitive.min_points_per_primitive = 2;
+
+    HESFMPipeline pipeline(cfg);
+
+    std::vector<SemanticPoint> points;
+    for (int i = 0; i < 8; ++i) {
+        SemanticPoint pt;
+        pt.position = Vector3d(0.02 * i, 0.0, 0.0);
+        pt.semantic_class = 1;
+        pt.semantic_confidence = 0.9f;
+        pt.uncertainty_total = 0.2;
+        pt.uncertainty_semantic = 0.2;
+        points.push_back(pt);
+    }
+
+    ASSERT_GT(pipeline.process(points, Vector3d::Zero()), 0);
+    ASSERT_FALSE(pipeline.getLastPrimitives().empty());
+
+    pipeline.reset();
+    EXPECT_TRUE(pipeline.getLastPrimitives().empty());
 }
 
 // =============================================================================
