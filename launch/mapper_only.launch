@@ -1,0 +1,114 @@
+<?xml version="1.0"?>
+<!--
+  mapper_only.launch
+  Launch file for the semantic cloud + HESFM mapper stack only.
+
+  Useful for:
+  - Running the mapper in a dedicated tmux pane
+  - Pairing with standalone camera / segmentation launches
+  - Keeping nodelet zero-copy between cloud and mapper in one process
+
+  Usage:
+    roslaunch hesfm mapper_only.launch
+    roslaunch hesfm mapper_only.launch use_nodelets:=false
+    roslaunch hesfm mapper_only.launch launch_ov_msckf:=false
+-->
+<launch>
+  <!-- Core arguments -->
+  <arg name="camera_name" default="camera"/>
+  <arg name="map_frame" default="global"/>
+  <arg name="base_frame" default="camera_link"/>
+
+  <!-- Segmentation / dataset -->
+  <arg name="esanet_dataset" default="sunrgbd"/>
+
+  <!-- Feature toggles -->
+  <arg name="semantic_cloud" default="true"/>
+  <arg name="launch_mapper" default="true"/>
+  <arg name="use_nodelets" default="true"/>
+  <arg name="launch_ov_msckf" default="true"/>
+
+  <!-- Optional visualization outputs -->
+  <arg name="publish_primitives" default="false"/>
+  <arg name="publish_uncertainty_map" default="false"/>
+  <arg name="publish_uncertainty_cloud" default="false"/>
+
+  <!-- OpenVINS VIO -->
+  <arg name="ov_msckf_config" default="rs_d455"/>
+  <arg name="ov_msckf_verbosity" default="INFO"/>
+  <arg name="ov_msckf_output" default="log"/>
+
+  <!-- Shared config -->
+  <arg name="config_file" default="$(find hesfm)/config/hesfm_params.yaml"/>
+
+  <!-- Preload mapper params so the stack sees the same YAML-backed config as hesfm.launch. -->
+  <rosparam file="$(arg config_file)" command="load" ns="hesfm_mapper_node"/>
+
+  <!-- Shared nodelet manager -->
+  <node if="$(arg use_nodelets)" pkg="nodelet" type="nodelet" name="hesfm_manager"
+        args="manager" output="screen"/>
+
+  <!-- Semantic cloud -->
+  <group if="$(arg semantic_cloud)">
+    <node unless="$(arg use_nodelets)"
+          name="semantic_cloud_node" pkg="hesfm" type="semantic_cloud_node"
+          output="screen" respawn="false">
+      <rosparam file="$(arg config_file)" command="load"/>
+      <remap from="depth/image_rect_raw" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
+      <remap from="color/camera_info" to="$(arg camera_name)/color/camera_info"/>
+      <remap from="semantic/image" to="semantic_segmentation_node/semantic_image"/>
+      <remap from="semantic/uncertainty" to="semantic_segmentation_node/uncertainty"/>
+      <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
+    </node>
+
+    <node if="$(arg use_nodelets)"
+          pkg="nodelet" type="nodelet" name="semantic_cloud_node"
+          args="load hesfm/SemanticCloudNodelet hesfm_manager"
+          output="screen" respawn="false">
+      <rosparam file="$(arg config_file)" command="load"/>
+      <remap from="depth/image_rect_raw" to="$(arg camera_name)/aligned_depth_to_color/image_raw"/>
+      <remap from="color/camera_info" to="$(arg camera_name)/color/camera_info"/>
+      <remap from="semantic/image" to="semantic_segmentation_node/semantic_image"/>
+      <remap from="semantic/uncertainty" to="semantic_segmentation_node/uncertainty"/>
+      <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
+    </node>
+  </group>
+
+  <!-- Mapper -->
+  <group if="$(arg launch_mapper)">
+    <node unless="$(arg use_nodelets)"
+          name="hesfm_mapper_node" pkg="hesfm" type="hesfm_mapper_node"
+          output="screen" respawn="false">
+      <rosparam file="$(arg config_file)" command="load"/>
+      <param name="map_frame" value="$(arg map_frame)"/>
+      <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
+      <param name="publish_primitives" value="$(arg publish_primitives)"/>
+      <param name="publish_uncertainty_map" value="$(arg publish_uncertainty_map)"/>
+      <param name="publish_uncertainty_cloud" value="$(arg publish_uncertainty_cloud)"/>
+    </node>
+
+    <node if="$(arg use_nodelets)"
+          pkg="nodelet" type="nodelet" name="hesfm_mapper_node"
+          args="load hesfm/HESFMMapperNodelet hesfm_manager"
+          output="screen" respawn="false">
+      <rosparam file="$(arg config_file)" command="load"/>
+      <param name="map_frame" value="$(arg map_frame)"/>
+      <param name="esanet_dataset" value="$(arg esanet_dataset)"/>
+      <param name="publish_primitives" value="$(arg publish_primitives)"/>
+      <param name="publish_uncertainty_map" value="$(arg publish_uncertainty_map)"/>
+      <param name="publish_uncertainty_cloud" value="$(arg publish_uncertainty_cloud)"/>
+    </node>
+  </group>
+
+  <!-- OpenVINS -->
+  <group if="$(arg launch_ov_msckf)">
+    <include file="$(find ov_msckf)/launch/subscribe.launch">
+      <arg name="config" value="$(arg ov_msckf_config)"/>
+      <arg name="verbosity" value="$(arg ov_msckf_verbosity)"/>
+      <arg name="output" value="$(arg ov_msckf_output)"/>
+    </include>
+
+    <node pkg="tf2_ros" type="static_transform_publisher" name="imu_to_camera_link"
+          args="0 0 0 0.5 -0.5 0.5 0.5 imu camera_link"/>
+  </group>
+</launch>
