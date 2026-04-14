@@ -366,6 +366,12 @@ install(DIRECTORY rviz/
   FILES_MATCHING PATTERN "*.rviz"
 )
 
+## Install helper shell scripts
+install(PROGRAMS
+  scripts/tmux_hesfm_pipeline.sh
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
 ## Install Python scripts
 catkin_install_python(PROGRAMS
   scripts/exploration_goal_relay.py

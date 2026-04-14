@@ -18,6 +18,7 @@
   <arg name="camera_name" default="camera"/>
   <arg name="map_frame" default="global"/>
   <arg name="base_frame" default="camera_link"/>
+  <arg name="odom_frame" default="odom"/>
 
   <!-- Segmentation / dataset -->
   <arg name="esanet_dataset" default="sunrgbd"/>
@@ -110,5 +111,15 @@
 
     <node pkg="tf2_ros" type="static_transform_publisher" name="imu_to_camera_link"
           args="0 0 0 0.5 -0.5 0.5 0.5 imu camera_link"/>
+  </group>
+
+  <!-- Static TF fallback so mapping still works when VIO is disabled or unstable.
+       RealSense publishes camera_link -> optical frames, so map_frame -> base_frame
+       is enough for semantic_cloud visualization and mapper TF lookup. -->
+  <group unless="$(arg launch_ov_msckf)">
+    <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom"
+          args="0 0 0 0 0 0 $(arg map_frame) $(arg odom_frame)"/>
+    <node pkg="tf2_ros" type="static_transform_publisher" name="odom_to_base"
+          args="0 0 0 0 0 0 $(arg odom_frame) $(arg base_frame)"/>
   </group>
 </launch>

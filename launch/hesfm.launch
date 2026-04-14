@@ -49,9 +49,9 @@
   <arg name="map_size_z" default="3.0"/>
   
   <!-- Feature toggles -->
-  <arg name="launch_camera" default="true"/>
-  <arg name="launch_segmentation" default="true"/>
-  <arg name="semantic_cloud" default="true"/>
+  <arg name="launch_camera" default="false"/>
+  <arg name="launch_segmentation" default="false"/>
+  <arg name="semantic_cloud" default="false"/>
   <arg name="launch_mapper" default="true"/>
   <arg name="launch_costmap" default="false"/>
   <arg name="launch_visualization" default="false"/>
@@ -67,7 +67,7 @@
   <arg name="publish_uncertainty_cloud" default="false"/>
 
   <!-- OpenVINS VIO (ov_msckf) -->
-  <arg name="launch_ov_msckf"   default="true"/>
+  <arg name="launch_ov_msckf"   default="false"/>
   <arg name="ov_msckf_config"   default="rs_d455"/>  <!-- calibration folder under ov_msckf/../config/ -->
   <arg name="ov_msckf_verbosity" default="INFO"/>
   <arg name="ov_msckf_output" default="log"/>  <!-- roslaunch output mode for ov_msckf: 'screen' or 'log' -->
