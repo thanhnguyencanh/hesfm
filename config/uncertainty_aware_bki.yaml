@@ -1,0 +1,33 @@
+# =============================================================================
+# HESFM — Uncertainty-aware BKI parameters (Eq. 14-15 in Kim et al. 2024)
+# Loaded by hesfm_mapper_node and uncertainty_aware_semantic_cloud_node.
+# =============================================================================
+
+uncertainty_aware_bki:
+  # --- Map structure -----------------------------------------------------------
+  resolution: 0.05                # voxel size [m]
+  num_classes: 40                 # match the segmentation network
+  alpha0: 1.0                     # Dirichlet prior pseudo-count per class
+
+  # --- Sparse kernel (base) ----------------------------------------------------
+  l_base: 0.30                    # base length scale [m]
+  sigma0: 1.0
+
+  # --- Adaptive (uncertainty-aware) modulation, Eq. (15) -----------------------
+  beta:  0.5                      # confidence gain
+  gamma: 3.0                      # uncertainty decay
+
+  # --- Uncertainty thresholding -----------------------------------------------
+  u_thr: 0.7                      # fixed cap (used when adaptive=false)
+  use_adaptive_thr: true          # drop top-ũ% most uncertain points each frame
+  drop_top_pct: 0.10
+
+# Cloud builder
+semantic_cloud:
+  depth_min_m: 0.30
+  depth_max_m: 6.00
+  subsample: 2                    # take every Nth pixel (speed)
+  uncertainty_threshold: 0.7      # gate at the cloud level too (defence-in-depth)
+  adaptive_threshold: true
+  uncertainty_top_percent: 0.10             
+  publish_full_probs: true        # required by Continuous Categorical BKI (Eq. 14)

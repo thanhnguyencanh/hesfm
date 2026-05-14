@@ -1,0 +1,36 @@
+# =============================================================================
+# HESFM — Evidential perception parameters
+# Loaded by scripts/esanet_evidential_node.py
+# =============================================================================
+
+evidential:
+  num_classes: 40                # NYUv2-40
+  flexible: true                 # use F-EDL flexible Dirichlet head
+  evidence: softplus             # softplus | relu | exp
+  publish_probs: true            # publish [C, H, W] per-class probs
+  publish_alpha: false           # publish raw α (large message; off by default)
+  publish_color: true            # colorised label image for RViz
+
+  # Depth normalization (mm). Default values are NYUv2-40 train-set stats.
+  # Override per-sensor (e.g. SUN-RGBD or RealSense D455 in your room) to
+  # avoid the network seeing out-of-distribution depth statistics.
+  depth_norm_mean: 2841.94941272766
+  depth_norm_std:  1417.2594281672277
+
+# -----------------------------------------------------------------------------
+# Backend selection
+#   torch  : PyTorch checkpoint, used on RTX dev machines
+#   trt    : TensorRT engine, used on Jetson Xavier / Orin AGX
+# -----------------------------------------------------------------------------
+backend: torch
+checkpoint: $(find hesfm)/checkpoints/esanet_r34_evidential.pth
+engine_path: $(find hesfm)/checkpoints/esanet_r34_evidential_fp16.engine
+device: cuda:0
+
+# -----------------------------------------------------------------------------
+# Topics
+# -----------------------------------------------------------------------------
+rgb_topic:   /camera/color/image_raw
+depth_topic: /camera/aligned_depth_to_color/image_raw
+queue_size:  5
+approx_sync_slop: 0.05

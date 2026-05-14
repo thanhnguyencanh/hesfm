@@ -109,13 +109,22 @@ class BaseSegmentationBackend:
 
 
 class DFormerBackend(BaseSegmentationBackend):
-    """DFormerv2-Large backend using SUN RGB-D checkpoint."""
+    """DFormer (v1) and DFormerv2 backend.
 
-    # Normalization constants matching DFormer dataloader
+    Selectable backbones via `config['variant']`:
+      v1: DFormer-Large | DFormer-Base | DFormer-Small | DFormer-Tiny
+      v2: DFormerv2_L   | DFormerv2_B  | DFormerv2_S
+    """
+
+    # Normalization constants matching DFormer's dataloader
+    # (sign=True / x_is_single_channel branch for depth).
     RGB_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
     RGB_STD  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
     DEP_MEAN = np.array([0.48,  0.48,  0.48 ], dtype=np.float32)
     DEP_STD  = np.array([0.28,  0.28,  0.28 ], dtype=np.float32)
+
+    _V1_BACKBONES = {"DFormer-Large", "DFormer-Base", "DFormer-Small", "DFormer-Tiny"}
+    _V2_BACKBONES = {"DFormerv2_L", "DFormerv2_B", "DFormerv2_S"}
 
     def __init__(self, config):
         super().__init__(config)
@@ -123,16 +132,41 @@ class DFormerBackend(BaseSegmentationBackend):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.fp16   = config.get('fp16', False) and self.device.type == 'cuda'
 
-        # DFormerv2 on SUN RGB-D uses square 480×480 input
-        self.input_height = 480
-        self.input_width  = 480
+        # Backbone variant + decoder
+        self.variant           = config.get('variant', 'DFormer-Large')
+        self.decoder_kind      = config.get('decoder', 'ham')
+        self.decoder_embed_dim = config.get('decoder_embed_dim', 512)
+        self.drop_path_rate    = config.get('drop_path_rate',
+                                            0.2 if self.variant in self._V1_BACKBONES else 0.1)
+
+        # v1 SUN-RGBD checkpoints were trained BGR-in (this is a known quirk
+        # of the original repo's training pipeline); v2 follows DFormer's
+        # canonical RGB pipeline (RGBXDataset converts BGR→RGB).
+        self.bgr_input = config.get('bgr_input',
+                                    self.variant in self._V1_BACKBONES)
+
+        # Depth → 8-bit replicated 3-channel mapping range (metres).
+        self.depth_norm_max_m = float(config.get('depth_norm_max_m', 10.0))
+
+        # Input H/W — use the YAML-configured dims, do NOT force a square crop.
+        self.input_height = int(config.get('input_height', self.input_height))
+        self.input_width  = int(config.get('input_width',  self.input_width))
 
         model_path = config.get('model_path', '')
         self.model = self._load_model(model_path)
-        rospy.loginfo(f"DFormer backend initialized on {self.device} (fp16={self.fp16})")
+        rospy.loginfo(
+            f"DFormer backend initialized on {self.device} "
+            f"(variant={self.variant}, decoder={self.decoder_kind}, "
+            f"input={self.input_height}x{self.input_width}, "
+            f"bgr_input={self.bgr_input}, fp16={self.fp16})"
+        )
 
     def _load_model(self, model_path):
-        """Build DFormer-Large and load SUN RGB-D checkpoint."""
+        """Build a DFormer/DFormerv2 EncoderDecoder and load checkpoint."""
+        if (self.variant not in self._V1_BACKBONES
+                and self.variant not in self._V2_BACKBONES):
+            raise ValueError(f"Unknown DFormer variant: {self.variant!r}")
+
         dformer_dir = os.path.join(os.path.dirname(__file__), '..', 'DFormer')
         dformer_dir = os.path.abspath(dformer_dir)
         stubs_dir   = os.path.join(dformer_dir, 'mmstubs')
@@ -149,15 +183,16 @@ class DFormerBackend(BaseSegmentationBackend):
             raise RuntimeError(f"Failed to import DFormer modules: {e}")
 
         cfg = edict()
-        cfg.backbone          = 'DFormer-Large'
-        cfg.decoder           = 'ham'
-        cfg.decoder_embed_dim = 512
-        cfg.drop_path_rate    = 0.2
+        cfg.backbone          = self.variant
+        cfg.decoder           = self.decoder_kind
+        cfg.decoder_embed_dim = self.decoder_embed_dim
+        cfg.drop_path_rate    = self.drop_path_rate
         cfg.num_classes       = self.num_classes
         cfg.pretrained_model  = None
         cfg.bn_eps            = 1e-3
         cfg.bn_momentum       = 0.1
         cfg.aux_rate          = 0.0
+        cfg.background        = 255
 
         # criterion=None skips pretrained backbone loading in EncoderDecoder
         model = EncoderDecoder(cfg, criterion=None)
@@ -168,11 +203,15 @@ class DFormerBackend(BaseSegmentationBackend):
 
         rospy.loginfo(f"[DFormer] loading checkpoint: {model_path}")
         ckpt = torch.load(model_path, map_location='cpu')
-        # Handle various checkpoint formats
         state = ckpt.get('state_dict', ckpt.get('model', ckpt))
-        # Strip 'module.' prefix from DDP-saved checkpoints
         state = {k.replace('module.', ''): v for k, v in state.items()}
-        model.load_state_dict(state, strict=False)
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        if missing:
+            rospy.logwarn(f"[DFormer] missing keys: {len(missing)} "
+                          f"(first: {missing[:3]})")
+        if unexpected:
+            rospy.logwarn(f"[DFormer] unexpected keys: {len(unexpected)} "
+                          f"(first: {unexpected[:3]})")
         rospy.loginfo("[DFormer] checkpoint loaded")
 
         model = model.to(self.device).eval()
@@ -181,21 +220,22 @@ class DFormerBackend(BaseSegmentationBackend):
         return model
 
     def preprocess(self, rgb, depth=None):
-        """Preprocess RGB (BGR uint8) and depth (float32 metres) for DFormer-Large."""
-        # DFormer-Large + SUNRGBD uses BGR order (only DFormerv2 uses RGB)
+        """Preprocess RGB (cv_bridge BGR uint8) and depth (float32 metres)."""
         rgb_resized = cv2.resize(rgb, (self.input_width, self.input_height),
-                                  interpolation=cv2.INTER_LINEAR)
+                                 interpolation=cv2.INTER_LINEAR)
+        if not self.bgr_input:
+            rgb_resized = cv2.cvtColor(rgb_resized, cv2.COLOR_BGR2RGB)
         rgb_norm = (rgb_resized.astype(np.float32) / 255.0 - self.RGB_MEAN) / self.RGB_STD
         rgb_tensor = torch.from_numpy(rgb_norm.transpose(2, 0, 1)).unsqueeze(0).to(self.device)
 
         dep_tensor = None
         if depth is not None:
-            # Map depth metres → uint8 [0-255] matching SUN RGB-D depth PNG convention
-            # SUN RGB-D stores depth as uint16 PNG; cv2.IMREAD_GRAYSCALE scales to uint8 (/256)
-            # Equivalent: clip to 0-10m, scale to 0-255
-            dep_u8 = np.clip(depth / 10.0 * 255.0, 0, 255).astype(np.uint8)
+            # Match DFormer dataloader: clip to [0, depth_norm_max_m], map to
+            # uint8, replicate to 3 channels, normalise with mean/std.
+            scale = 255.0 / max(self.depth_norm_max_m, 1e-6)
+            dep_u8 = np.clip(depth * scale, 0, 255).astype(np.uint8)
             dep_u8 = cv2.resize(dep_u8, (self.input_width, self.input_height),
-                                 interpolation=cv2.INTER_NEAREST)
+                                interpolation=cv2.INTER_NEAREST)
             dep_3ch = cv2.merge([dep_u8, dep_u8, dep_u8])
             dep_norm = (dep_3ch.astype(np.float32) / 255.0 - self.DEP_MEAN) / self.DEP_STD
             dep_tensor = torch.from_numpy(dep_norm.transpose(2, 0, 1)).unsqueeze(0).to(self.device)
@@ -645,6 +685,14 @@ class SemanticSegmentationNode:
         self.dformer_model_path = rospy.get_param('~dformer_model_path', '')
         self.esanet_model_path = rospy.get_param('~esanet_model_path', '')
         self.esanet_trt_engine = rospy.get_param('~esanet_trt_engine', '')
+
+        # DFormer variant + decoder selection (used for both v1 and v2 backends).
+        self.dformer_variant         = rospy.get_param('~dformer_variant', 'DFormer-Large')
+        self.dformer_decoder         = rospy.get_param('~dformer_decoder', 'ham')
+        self.dformer_embed_dim       = rospy.get_param('~dformer_embed_dim', 512)
+        self.dformer_drop_path_rate  = rospy.get_param('~dformer_drop_path_rate', -1.0)
+        self.dformer_depth_norm_max  = rospy.get_param('~dformer_depth_norm_max_m', 10.0)
+        self.dformer_bgr_input       = rospy.get_param('~dformer_bgr_input', None)
         
         # Initialize backend
         self.backend = self._create_backend()
@@ -687,8 +735,22 @@ class SemanticSegmentationNode:
             'fp16': True,
         }
         
-        if self.backend_name == 'dformer':
-            config['model_path'] = self.dformer_model_path
+        if self.backend_name in ('dformer', 'dformerv2'):
+            config['model_path']        = self.dformer_model_path
+            # `dformerv2` backend name implies a v2 backbone unless the user
+            # explicitly overrode `~dformer_variant`.
+            if self.backend_name == 'dformerv2' \
+                    and self.dformer_variant.startswith('DFormer-'):
+                config['variant'] = 'DFormerv2_L'
+            else:
+                config['variant'] = self.dformer_variant
+            config['decoder']           = self.dformer_decoder
+            config['decoder_embed_dim'] = self.dformer_embed_dim
+            if self.dformer_drop_path_rate >= 0:
+                config['drop_path_rate'] = self.dformer_drop_path_rate
+            config['depth_norm_max_m']  = self.dformer_depth_norm_max
+            if self.dformer_bgr_input is not None:
+                config['bgr_input'] = bool(self.dformer_bgr_input)
             return DFormerBackend(config)
         elif self.backend_name == 'esanet_pytorch':
             config['model_path'] = self.esanet_model_path
