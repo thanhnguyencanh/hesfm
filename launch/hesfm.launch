@@ -49,17 +49,17 @@
   <arg name="map_size_z" default="3.0"/>
   
   <!-- Feature toggles -->
-  <arg name="launch_camera" default="false"/>
+  <arg name="launch_camera" default="true"/>
   <arg name="launch_segmentation" default="false"/>
   <arg name="semantic_cloud" default="false"/>
-  <arg name="launch_mapper" default="true"/>
+  <arg name="launch_mapper" default="false"/>
   <arg name="launch_costmap" default="false"/>
   <arg name="launch_visualization" default="false"/>
   <arg name="launch_costmap_3d" default="false"/>
-  <arg name="rviz" default="true"/>
+  <arg name="rviz" default="false"/>
 
   <!-- Nodelet mode: run cloud + mapper in one process for zero-copy PointCloud2 -->
-  <arg name="use_nodelets" default="true"/>
+  <arg name="use_nodelets" default="false"/>
 
   <!-- Optional visualisation outputs (disable on Jetson to save CPU/bandwidth) -->
   <arg name="publish_primitives"       default="false"/>
@@ -67,7 +67,7 @@
   <arg name="publish_uncertainty_cloud" default="false"/>
 
   <!-- OpenVINS VIO (ov_msckf) -->
-  <arg name="launch_ov_msckf"   default="false"/>
+  <arg name="launch_ov_msckf"   default="true"/>
   <arg name="ov_msckf_config"   default="rs_d455"/>  <!-- calibration folder under ov_msckf/../config/ -->
   <arg name="ov_msckf_verbosity" default="INFO"/>
   <arg name="ov_msckf_output" default="log"/>  <!-- roslaunch output mode for ov_msckf: 'screen' or 'log' -->
@@ -297,6 +297,10 @@
          Quaternion (0.5, -0.5, 0.5, 0.5) rotates optical convention to ROS body convention. -->
     <node pkg="tf2_ros" type="static_transform_publisher" name="imu_to_camera_link"
           args="0 0 0 0.5 -0.5 0.5 0.5 imu camera_link"/>
+
+    <!--For slide indoor dataset-->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="world_to_global"
+          args="0 0 0 0 0 0 1 world global"/>
   </group>
 
   <!-- ===================================================================== -->
@@ -315,11 +319,11 @@
   
   <!-- Static TF fallback: used only when ov_msckf is NOT running.
        When ov_msckf is active it publishes map→global→imu→cam0/cam1 itself. -->
-    <!-- <group unless="$(arg launch_ov_msckf)">
+    <group unless="$(arg launch_ov_msckf)">
       <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom"
-            args="0 0 0 0 0 0 $(arg map_frame) $(arg odom_frame)"/>
+            args="0 0 0 0 0 0 1 $(arg map_frame) $(arg odom_frame)"/>
       <node pkg="tf2_ros" type="static_transform_publisher" name="odom_to_base"
-            args="0 0 0 0 0 0 $(arg odom_frame) $(arg base_frame)"/>
-    </group> -->
+            args="0 0 0 0 0 0 1 $(arg odom_frame) $(arg base_frame)"/>
+    </group>
   
 </launch>
