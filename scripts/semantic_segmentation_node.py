@@ -669,8 +669,8 @@ class SemanticSegmentationNode:
         self.depth_sub = rospy.Subscriber('depth/image_rect_raw',   Image, self.depth_callback, queue_size=1)
 
         # Stats
-        # self.frame_count = 0
-        # self.total_time = 0.0
+        self.frame_count = 0
+        self.total_time = 0.0
 
         # Inference runs in a dedicated thread — callbacks never block
         self._infer_thread = threading.Thread(target=self._infer_loop, daemon=True)
@@ -761,10 +761,10 @@ class SemanticSegmentationNode:
         if self.remap_lut is not None:
             labels = self.remap_lut[labels]
 
-        # self.total_time += elapsed
-        # self.frame_count += 1
-        # if self.frame_count % 90 == 0:
-        #     rospy.loginfo(f"Segmentation FPS: {self.frame_count / self.total_time:.1f}")
+        self.total_time += elapsed
+        self.frame_count += 1
+        if self.frame_count % 90 == 0:
+            rospy.loginfo(f"Segmentation FPS: {self.frame_count / self.total_time:.1f}")
 
         # Create header
         header = Header()
