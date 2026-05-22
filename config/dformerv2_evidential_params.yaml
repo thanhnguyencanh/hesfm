@@ -1,0 +1,42 @@
+# =============================================================================
+# HESFM — DFormerv2 + F-EDL evidential perception parameters
+# Loaded by scripts/dformerv2_evidential_node.py
+# =============================================================================
+
+evidential:
+  num_classes: 40                # NYUv2-40 (use 37 for SUN-RGBD)
+  flexible: true                 # F-EDL (alpha, p, tau) head
+  evidence: softplus             # softplus | relu | exp
+  publish_probs: true            # publish [C, H, W] predictive mean (mu)
+  publish_alpha: false           # publish raw alpha (large; off by default)
+  publish_color: true            # colorised label image for RViz
+
+# DFormerv2 backbone / decoder selection
+dformerv2:
+  backbone: DFormerv2_L          # DFormerv2_S | DFormerv2_B | DFormerv2_L
+  decoder:  MLPDecoder           # MLPDecoder | ham | UPernet | deeplabv3+ | nl
+  decoder_embed_dim: 512         # 768 for MLP-default, 512 for HAM
+  drop_path_rate: 0.1
+
+# Depth pre-processing — DFormer expects 8-bit-replicated 3-channel depth
+# normalised with mean=[0.48]*3, std=[0.28]*3. We linearly map metric depth
+# in [0, depth_norm_max_m] to [0, 255] before that normalisation.
+sensor:
+  depth_norm_max_m: 10.0
+
+# -----------------------------------------------------------------------------
+# Backend selection
+# -----------------------------------------------------------------------------
+backend: torch                   # torch | trt
+checkpoint:  $(find hesfm)/checkpoints/dformerv2_l_evidential.pth
+engine_path: $(find hesfm)/checkpoints/dformerv2_l_evidential_fp16.engine
+device: cuda:0
+dformer_path: ""                  # empty -> rely on $DFORMER_PATH env var
+
+# -----------------------------------------------------------------------------
+# Topics
+# -----------------------------------------------------------------------------
+rgb_topic:   /camera/color/image_raw
+depth_topic: /camera/aligned_depth_to_color/image_raw
+queue_size:  5
+approx_sync_slop: 0.05
