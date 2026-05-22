@@ -167,7 +167,7 @@ private:
     }
 
     void setupSubscribers() {
-        camera_info_sub_ = nh_.subscribe("color/camera_info", 1,
+        camera_info_sub_ = nh_.subscribe("depth/camera_info", 1,
                                           &SemanticCloudNodelet::cameraInfoCallback, this);
 
         // No RGB in sync — colors come from class palette, not pixels.

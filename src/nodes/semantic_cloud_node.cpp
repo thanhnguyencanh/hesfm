@@ -159,7 +159,7 @@ private:
     }
 
     void setupSubscribers() {
-        camera_info_sub_ = nh_.subscribe("color/camera_info", 1,
+        camera_info_sub_ = nh_.subscribe("depth/camera_info", 1,
                                           &SemanticCloudNode::cameraInfoCallback, this);
         // RGB is NOT included in the sync — colors come from the class palette, not pixels.
         // depth_msg->header provides the timestamp; depth and RGB share the same camera clock.
