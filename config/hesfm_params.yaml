@@ -120,4 +120,4 @@ sensor:
 semantic_cloud:
   use_uncertainty: true
   default_uncertainty: 0.3
-  output_frame: "camera_accel_optical_frame"
+  output_frame: "base_link"
